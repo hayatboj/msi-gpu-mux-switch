@@ -1,0 +1,36 @@
+[package]
+name = "msi-gpu-mux"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["Anees Iqbal <hello@aneesiqbal.ai>"]
+license = "MIT"
+readme = "README.md"
+description = "Switch GPU MUX modes on the characterized MSI Vector 16 HX AI A2XWIG"
+keywords = ["msi", "gpu", "mux", "windows", "laptop"]
+categories = ["command-line-utilities", "hardware-support"]
+default-run = "msi-mux-switch"
+
+[dependencies]
+anyhow = "1.0.104"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+clap = { version = "4.6.6", features = ["derive"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.11.0"
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Threading",
+    "Win32_System_WindowsProgramming",
+] }
+winreg = "0.56.0"
+wmi = { version = "0.18.4", default-features = false }
+
+[build-dependencies]
+embed-resource = "3.0.11"
+
+[[bin]]
+name = "msi-mux-switch"
+path = "src/bin/msi-mux-switch.rs"
+test = false
