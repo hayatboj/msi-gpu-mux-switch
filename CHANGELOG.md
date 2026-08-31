@@ -7,17 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-31
+
 ### Added
 
 - Linux diagnostics and mode switching using DMI, efivarfs, PCI sysfs, and the
   kernel `msi-wmi-platform` debugfs interface.
-- Linux AMD64 release archives with checksums.
+- Linux AMD64 CI coverage and release archives with checksums.
 
 ### Changed
 
 - Linux switching preserves the efivarfs inode flags around exact firmware
   writes and retains the same hardware, BIOS, power, confirmation, preflight,
   verification, rollback, and manual-shutdown protections as Windows.
+- Platform-specific system access now implements shared platform and ACPI
+  traits in separate Windows and Linux modules.
+- Reworked the README with cross-platform installation, usage, prerequisites,
+  safety, rollback, JSON, and development guidance.
 
 ## [0.1.0] - 2026-08-31
 
@@ -34,5 +40,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Embedded Windows manifest requesting Administrator privileges.
 - Windows CI, release archives, SHA-256 checksums, and tagged GitHub Releases.
 
-[Unreleased]: https://github.com/steelbrain/msi-gpu-mux-switch/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/steelbrain/msi-gpu-mux-switch/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/steelbrain/msi-gpu-mux-switch/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/steelbrain/msi-gpu-mux-switch/releases/tag/v0.1.0
