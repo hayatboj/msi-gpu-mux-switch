@@ -144,10 +144,10 @@ handled explicitly. Review the human and JSON paths together.
 - `.github/workflows/ci.yml` runs formatting, strict Clippy, tests, and release
   builds for Windows AMD64 and Linux AMD64 on pull requests and relevant branch
   pushes.
-- `.github/workflows/release.yml` builds and retains a Windows AMD64 ZIP on
-  pull requests and `master` pushes. A pushed `v*` tag publishes the archive
-  and aggregate `SHA256SUMS` as a GitHub Release; the workflow does not create
-  the tag.
+- `.github/workflows/release.yml` builds and retains Windows AMD64 and Linux
+  AMD64 ZIPs on pull requests and `master` pushes. A pushed `v*` tag publishes
+  the archives and aggregate `SHA256SUMS` as a GitHub Release; the workflow
+  does not create the tag.
 - Release archives contain `msi-mux-switch.exe`, `README.md`, `CHANGELOG.md`,
   and `LICENSE`.
 - Keep external GitHub Actions pinned to full commit hashes with a version

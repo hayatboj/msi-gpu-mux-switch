@@ -22,6 +22,9 @@ jobs:
           - platform: windows-amd64
             runner: windows-2025
             target: x86_64-pc-windows-msvc
+          - platform: linux-amd64
+            runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -31,11 +34,10 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Build binary
-        env:
-          TARGET: ${{ matrix.target }}
-        run: cargo build --locked --release --target "$env:TARGET"
+        run: cargo build --locked --release --target "${{ matrix.target }}"
 
-      - name: Package archive
+      - name: Package Windows archive
+        if: runner.os == 'Windows'
         env:
           PLATFORM: ${{ matrix.platform }}
           TARGET: ${{ matrix.target }}
@@ -48,6 +50,19 @@ jobs:
           Compress-Archive -Path staging\* -DestinationPath "dist\$archive"
           $hash = (Get-FileHash "dist\$archive" -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $archive" | Set-Content "dist\$archive.sha256" -Encoding ascii
+
+      - name: Package Linux archive
+        if: runner.os == 'Linux'
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist staging
+          cp "target/$TARGET/release/msi-mux-switch" README.md CHANGELOG.md LICENSE staging/
+          archive="$PLATFORM-msi-mux-switch.zip"
+          (cd staging && python3 -m zipfile -c "../dist/$archive" ./*)
+          (cd dist && sha256sum "$archive" > "$archive.sha256")
 
       - name: Upload archive
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

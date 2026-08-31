@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Linux diagnostics and mode switching using DMI, efivarfs, PCI sysfs, and the
   kernel `msi-wmi-platform` debugfs interface.
+- Linux AMD64 release archives with checksums.
 
 ### Changed
 
