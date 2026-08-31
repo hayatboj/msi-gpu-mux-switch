@@ -3,22 +3,21 @@ use std::io::{self, Write};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, bail};
+use anyhow::Context;
+use anyhow::{Result, bail};
 use chrono::Local;
 use clap::{Parser, error::ErrorKind};
 use msi_gpu_mux::{
     EXPECTED_BIOS, EXPECTED_VARIABLE_ATTRIBUTES, EXPECTED_VARIABLE_LENGTH, FirmwareInfo,
-    FirmwareVariable, Mode, MsiAcpi, StateSnapshot, ac_power_online, backup_directory,
-    collect_snapshot, is_elevated, query_machine, read_msi_variable, sha256_hex, stage_target,
-    trigger_value, write_msi_variable,
+    FirmwareVariable, MsiAcpi, ac_power_online, backup_directory, is_elevated,
+    privilege_requirement, query_machine, read_msi_variable, recovery_key_warning, sha256_hex,
+    shutdown_command, stage_target, trigger_value, verification_command, wait_for_keypress,
+    write_msi_variable,
 };
+use msi_gpu_mux::{Mode, StateSnapshot, collect_snapshot};
 use serde::Serialize;
-use serde_json::{Value, json};
-
-#[link(name = "msvcrt")]
-unsafe extern "C" {
-    fn _getch() -> i32;
-}
+use serde_json::Value;
+use serde_json::json;
 
 /// Inspect or change the GPU MUX mode on the characterized MSI MS-15M3.
 #[derive(Debug, Parser)]
@@ -180,12 +179,11 @@ fn main() {
 
     let reporter = Reporter { json: args.json };
     match run(args, &reporter) {
-        Ok(RunOutcome::Applied) => {
-            if !reporter.json {
+        Ok(outcome) => {
+            if outcome == RunOutcome::Applied && !reporter.json {
                 wait_for_keypress();
             }
         }
-        Ok(RunOutcome::Finished) => {}
         Err(error) => {
             reporter.error(format!("{error:#}"));
             if !reporter.json {
@@ -194,15 +192,6 @@ fn main() {
             std::process::exit(1);
         }
     }
-}
-
-fn wait_for_keypress() {
-    eprint!("Press any key to exit...");
-    let _ = io::stderr().flush();
-    unsafe {
-        _getch();
-    }
-    eprintln!();
 }
 
 fn choose_mode(available: &[Mode], reporter: &Reporter) -> Result<Option<Mode>> {
@@ -415,17 +404,13 @@ fn run(args: Args, reporter: &Reporter) -> Result<RunOutcome> {
     )?;
 
     if !is_elevated()? {
-        bail!("the GPU mode selector requires an elevated Administrator process");
+        bail!("the GPU mode selector requires {}", privilege_requirement());
     }
     if !ac_power_online()? {
         bail!("AC power is required for a GPU mode transition");
     }
 
-    reporter.warning(
-        "bitlocker_reminder",
-        "confirm that the BitLocker recovery key is available off-machine before continuing",
-        Value::Null,
-    );
+    reporter.warning("bitlocker_reminder", recovery_key_warning(), Value::Null);
     if args.json {
         reporter.event(
             "confirmation_skipped",
@@ -521,7 +506,12 @@ fn run(args: Args, reporter: &Reporter) -> Result<RunOutcome> {
     let mut trigger_sent = false;
 
     let apply_result = (|| -> Result<()> {
-        write_msi_variable(&staged)?;
+        if let Err(error) = write_msi_variable(&staged) {
+            firmware_staged = read_msi_variable()
+                .map(|current| current.bytes != before.bytes)
+                .unwrap_or(true);
+            return Err(error);
+        }
         firmware_staged = true;
 
         let after_stage = read_msi_variable()?;
@@ -616,16 +606,18 @@ fn run(args: Args, reporter: &Reporter) -> Result<RunOutcome> {
         return Err(error);
     }
 
+    let shutdown_command = shutdown_command();
+    let verification_command = verification_command();
     reporter.event(
         "success",
         format!(
-            "Mode '{target}' is staged and the firmware apply handshake succeeded.\nSave all work, close applications, then perform a full shutdown manually.\nRecommended manual command after saving work: shutdown /s /t 0\nAfter powering on, run msi-mux-switch.exe --debug to verify the new current mode."
+            "Mode '{target}' is staged and the firmware apply handshake succeeded.\nSave all work, close applications, then perform a full shutdown manually.\nRecommended manual command after saving work: {shutdown_command}\nAfter powering on, run {verification_command} to verify the new current mode."
         ),
         json!({
             "mode": target,
             "value": target.value(),
             "manual_shutdown_required": true,
-            "verification_command": "msi-mux-switch.exe --debug",
+            "verification_command": verification_command,
         }),
     )?;
     Ok(RunOutcome::Applied)

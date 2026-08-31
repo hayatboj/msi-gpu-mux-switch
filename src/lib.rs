@@ -1,35 +1,20 @@
-#![cfg_attr(not(windows), allow(dead_code))]
-
-#[cfg(not(windows))]
-compile_error!("msi-gpu-mux supports Windows only");
-
 use std::collections::BTreeMap;
-use std::ffi::c_void;
 use std::fmt;
-use std::mem::size_of;
-use std::path::PathBuf;
 use std::str::FromStr;
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, bail};
 use chrono::Local;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use windows::Win32::Foundation::{
-    CloseHandle, ERROR_NOT_ALL_ASSIGNED, ERROR_SUCCESS, GetLastError, HANDLE, LUID, SetLastError,
+
+pub mod platform;
+
+pub use platform::{
+    MsiAcpi, ac_power_online, backup_directory, is_elevated, privilege_requirement,
+    query_display_devices, query_machine, query_registry_state, read_msi_variable,
+    recovery_key_warning, secure_boot_enabled, shutdown_command, verification_command,
+    wait_for_keypress, write_msi_variable,
 };
-use windows::Win32::Security::{
-    AdjustTokenPrivileges, GetTokenInformation, LUID_AND_ATTRIBUTES, LookupPrivilegeValueW,
-    SE_PRIVILEGE_ENABLED, TOKEN_ADJUST_PRIVILEGES, TOKEN_ELEVATION, TOKEN_PRIVILEGES, TOKEN_QUERY,
-    TokenElevation,
-};
-use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
-use windows::Win32::System::WindowsProgramming::{
-    GetFirmwareEnvironmentVariableExW, SetFirmwareEnvironmentVariableExW,
-};
-use windows::core::{HSTRING, PCWSTR, w};
-use winreg::RegKey;
-use winreg::enums::HKEY_LOCAL_MACHINE;
-use wmi::{Variant, WMIConnection};
 
 pub const EXPECTED_MODEL: &str = "Vector 16 HX AI A2XWIG";
 pub const EXPECTED_BOARD: &str = "MS-15M3";
@@ -39,10 +24,8 @@ pub const MSI_VARIABLE_GUID: &str = "{DD96BAAF-145E-4F56-B1CF-193256298E99}";
 pub const EXPECTED_VARIABLE_LENGTH: usize = 20;
 pub const EXPECTED_VARIABLE_ATTRIBUTES: u32 = 0x0000_0007;
 
-const SECURE_BOOT_VARIABLE_NAME: &str = "SecureBoot";
-const EFI_GLOBAL_VARIABLE_GUID: &str = "{8BE4DF61-93CA-11D2-AA0D-00E098032B8C}";
-const GENERAL_SETTING_KEY: &str =
-    r"SOFTWARE\WOW6432Node\MSI\MSI Center\Component\Base Module\GeneralSetting";
+pub(crate) const SECURE_BOOT_VARIABLE_NAME: &str = "SecureBoot";
+pub(crate) const EFI_GLOBAL_VARIABLE_GUID: &str = "{8BE4DF61-93CA-11D2-AA0D-00E098032B8C}";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -190,6 +173,24 @@ pub struct ApState {
     pub apply_ready: bool,
 }
 
+pub(crate) fn decode_ap_state(raw: &[u8]) -> Result<ApState> {
+    if raw.len() < 3 || raw[0] == 0 {
+        bail!("MSI ACPI Get_AP returned an unsuccessful or short package");
+    }
+    let prefix_len = raw.len().min(8);
+    let raw_prefix = raw[..prefix_len]
+        .iter()
+        .map(|byte| format!("{byte:02X}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    Ok(ApState {
+        raw_prefix,
+        flag: raw[0],
+        data_byte1: raw[2],
+        apply_ready: raw[2] & 0x02 != 0,
+    })
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct AvailableSection<T> {
     pub available: bool,
@@ -229,175 +230,6 @@ pub struct StateSnapshot {
     pub display_devices: Vec<DisplayDevice>,
 }
 
-#[allow(non_snake_case)]
-#[derive(Deserialize)]
-struct ComputerRow {
-    Manufacturer: String,
-    Model: String,
-}
-
-#[allow(non_snake_case)]
-#[derive(Deserialize)]
-struct BoardRow {
-    Product: String,
-    Version: String,
-}
-
-#[allow(non_snake_case)]
-#[derive(Deserialize)]
-struct BiosRow {
-    SMBIOSBIOSVersion: String,
-}
-
-#[allow(non_snake_case)]
-#[derive(Deserialize)]
-struct DisplayRow {
-    Name: String,
-    Status: Option<String>,
-    ConfigManagerErrorCode: Option<u32>,
-    Present: Option<bool>,
-    HardwareID: Option<Vec<String>>,
-}
-
-#[allow(non_snake_case)]
-#[derive(Deserialize)]
-struct BatteryStatusRow {
-    PowerOnline: bool,
-}
-
-#[allow(non_snake_case)]
-#[derive(Deserialize)]
-struct MsiAcpiRow {
-    __Path: String,
-    InstanceName: String,
-}
-
-struct OwnedHandle(HANDLE);
-
-impl Drop for OwnedHandle {
-    fn drop(&mut self) {
-        if !self.0.is_invalid() {
-            let _ = unsafe { CloseHandle(self.0) };
-        }
-    }
-}
-
-fn open_process_token(access: windows::Win32::Security::TOKEN_ACCESS_MASK) -> Result<OwnedHandle> {
-    let mut token = HANDLE::default();
-    unsafe { OpenProcessToken(GetCurrentProcess(), access, &mut token) }
-        .context("OpenProcessToken failed")?;
-    Ok(OwnedHandle(token))
-}
-
-pub fn is_elevated() -> Result<bool> {
-    let token = open_process_token(TOKEN_QUERY)?;
-    let mut elevation = TOKEN_ELEVATION::default();
-    let mut returned = 0u32;
-    unsafe {
-        GetTokenInformation(
-            token.0,
-            TokenElevation,
-            Some((&mut elevation as *mut TOKEN_ELEVATION).cast::<c_void>()),
-            size_of::<TOKEN_ELEVATION>() as u32,
-            &mut returned,
-        )
-    }
-    .context("GetTokenInformation(TokenElevation) failed")?;
-    Ok(elevation.TokenIsElevated != 0)
-}
-
-fn enable_system_environment_privilege() -> Result<()> {
-    let token = open_process_token(TOKEN_QUERY | TOKEN_ADJUST_PRIVILEGES)?;
-    let mut luid = LUID::default();
-    unsafe {
-        LookupPrivilegeValueW(
-            PCWSTR::null(),
-            w!("SeSystemEnvironmentPrivilege"),
-            &mut luid,
-        )
-    }
-    .context("LookupPrivilegeValueW(SeSystemEnvironmentPrivilege) failed")?;
-
-    let privileges = TOKEN_PRIVILEGES {
-        PrivilegeCount: 1,
-        Privileges: [LUID_AND_ATTRIBUTES {
-            Luid: luid,
-            Attributes: SE_PRIVILEGE_ENABLED,
-        }],
-    };
-
-    unsafe {
-        SetLastError(ERROR_SUCCESS);
-        AdjustTokenPrivileges(token.0, false, Some(&privileges), 0, None, None)
-    }
-    .context("AdjustTokenPrivileges failed")?;
-
-    let status = unsafe { GetLastError() };
-    if status == ERROR_NOT_ALL_ASSIGNED {
-        bail!("SeSystemEnvironmentPrivilege is not present in this process token");
-    }
-    if status != ERROR_SUCCESS {
-        bail!("AdjustTokenPrivileges returned Win32 error {}", status.0);
-    }
-    Ok(())
-}
-
-fn read_firmware_variable_named(name: &str, guid: &str) -> Result<FirmwareVariable> {
-    enable_system_environment_privilege()?;
-    let name = HSTRING::from(name);
-    let guid = HSTRING::from(guid);
-    let mut bytes = vec![0u8; 4096];
-    let mut attributes = 0u32;
-    let length = unsafe {
-        GetFirmwareEnvironmentVariableExW(
-            &name,
-            &guid,
-            Some(bytes.as_mut_ptr().cast::<c_void>()),
-            bytes.len() as u32,
-            Some(&mut attributes),
-        )
-    };
-    if length == 0 {
-        return Err(windows::core::Error::from_thread())
-            .context("GetFirmwareEnvironmentVariableExW failed");
-    }
-    bytes.truncate(length as usize);
-    Ok(FirmwareVariable { bytes, attributes })
-}
-
-pub fn read_msi_variable() -> Result<FirmwareVariable> {
-    read_firmware_variable_named(MSI_VARIABLE_NAME, MSI_VARIABLE_GUID)
-}
-
-pub fn write_msi_variable(variable: &FirmwareVariable) -> Result<()> {
-    if variable.bytes.is_empty() {
-        bail!("refusing to write an empty UEFI value");
-    }
-    enable_system_environment_privilege()?;
-    let name = HSTRING::from(MSI_VARIABLE_NAME);
-    let guid = HSTRING::from(MSI_VARIABLE_GUID);
-    unsafe {
-        SetFirmwareEnvironmentVariableExW(
-            &name,
-            &guid,
-            Some(variable.bytes.as_ptr().cast::<c_void>()),
-            variable.bytes.len() as u32,
-            variable.attributes,
-        )
-    }
-    .context("SetFirmwareEnvironmentVariableExW(MsiDCVarData) failed")
-}
-
-pub fn secure_boot_enabled() -> Result<bool> {
-    let variable =
-        read_firmware_variable_named(SECURE_BOOT_VARIABLE_NAME, EFI_GLOBAL_VARIABLE_GUID)?;
-    let value = variable
-        .bytes
-        .first()
-        .context("SecureBoot variable is empty")?;
-    Ok(*value != 0)
-}
-
 pub fn stage_target(bytes: &[u8], target: Mode) -> Result<Vec<u8>> {
     if bytes.len() <= 5 {
         bail!("MsiDCVarData is shorter than six bytes");
@@ -418,158 +250,20 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
         .collect()
 }
 
-pub fn query_machine() -> Result<MachineInfo> {
-    let connection = WMIConnection::new().context("connect to ROOT\\CIMV2")?;
-    let computer: ComputerRow = connection
-        .raw_query::<ComputerRow>("SELECT Manufacturer, Model FROM Win32_ComputerSystem")?
-        .into_iter()
-        .next()
-        .context("Win32_ComputerSystem returned no rows")?;
-    let board: BoardRow = connection
-        .raw_query::<BoardRow>("SELECT Product, Version FROM Win32_BaseBoard")?
-        .into_iter()
-        .next()
-        .context("Win32_BaseBoard returned no rows")?;
-    let bios: BiosRow = connection
-        .raw_query::<BiosRow>("SELECT SMBIOSBIOSVersion FROM Win32_BIOS")?
-        .into_iter()
-        .next()
-        .context("Win32_BIOS returned no rows")?;
-    let expected_hardware = computer.Model == EXPECTED_MODEL && board.Product == EXPECTED_BOARD;
-    Ok(MachineInfo {
-        manufacturer: computer.Manufacturer,
-        model: computer.Model,
-        board: board.Product,
-        board_revision: board.Version,
-        bios: bios.SMBIOSBIOSVersion,
-        expected_hardware,
-    })
-}
-
-pub fn query_display_devices() -> Result<Vec<DisplayDevice>> {
-    let connection = WMIConnection::new().context("connect to ROOT\\CIMV2")?;
-    let rows: Vec<DisplayRow> = connection.raw_query(
-        "SELECT Name, Status, ConfigManagerErrorCode, Present, HardwareID \
-         FROM Win32_PnPEntity WHERE PNPClass = 'Display'",
-    )?;
-    Ok(rows
-        .into_iter()
-        .map(|row| DisplayDevice {
-            friendly_name: row.Name,
-            status: row.Status,
-            problem_code: row.ConfigManagerErrorCode,
-            present: row.Present,
-            hardware_ids: row.HardwareID.unwrap_or_default(),
-        })
-        .collect())
-}
-
-pub fn ac_power_online() -> Result<bool> {
-    let connection = WMIConnection::with_namespace_path("ROOT\\WMI")?;
-    let rows: Vec<BatteryStatusRow> =
-        connection.raw_query("SELECT PowerOnline FROM BatteryStatus")?;
-    Ok(rows.into_iter().any(|row| row.PowerOnline))
-}
-
-pub fn query_registry_state() -> BTreeMap<String, Option<u32>> {
-    const NAMES: [&str; 7] = [
-        "GPUswitchSP",
-        "GPUswitchST",
-        "GPUswitchCH",
-        "GPUswitchUMA",
-        "GPUswitchDiscrete",
-        "GPU_Switch",
-        "GPU_Switch_Support",
-    ];
-    let mut result = BTreeMap::new();
-    let key = RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey(GENERAL_SETTING_KEY);
-    for name in NAMES {
-        let value = key
-            .as_ref()
-            .ok()
-            .and_then(|key| key.get_value::<u32, _>(name).ok());
-        result.insert(name.to_string(), value);
+pub(crate) fn validate_writable_variable(variable: &FirmwareVariable) -> Result<()> {
+    if variable.bytes.len() != EXPECTED_VARIABLE_LENGTH {
+        bail!(
+            "refusing write: expected a {EXPECTED_VARIABLE_LENGTH}-byte MsiDCVarData value, found {}",
+            variable.bytes.len()
+        );
     }
-    result
-}
-
-pub struct MsiAcpi {
-    connection: WMIConnection,
-    path: String,
-}
-
-impl MsiAcpi {
-    pub fn connect() -> Result<Self> {
-        let connection =
-            WMIConnection::with_namespace_path("ROOT\\WMI").context("connect to ROOT\\WMI")?;
-        let rows: Vec<MsiAcpiRow> =
-            connection.raw_query("SELECT __Path, InstanceName FROM MSI_ACPI")?;
-        let expected_instance = r"ACPI\PNP0C14\0_0";
-        let row = rows
-            .into_iter()
-            .find(|row| row.InstanceName.eq_ignore_ascii_case(expected_instance))
-            .ok_or_else(|| anyhow!("MSI_ACPI instance '{expected_instance}' was not found"))?;
-        Ok(Self {
-            connection,
-            path: row.__Path,
-        })
+    if variable.attributes != EXPECTED_VARIABLE_ATTRIBUTES {
+        bail!(
+            "refusing write: expected UEFI attributes 0x{EXPECTED_VARIABLE_ATTRIBUTES:08X}, found 0x{:08X}",
+            variable.attributes
+        );
     }
-
-    fn invoke_package32(&self, method: &str, input_bytes: [u8; 32]) -> Result<Vec<u8>> {
-        let package = self.connection.get_object("Package_32")?.spawn_instance()?;
-        package.put_property("Bytes", input_bytes.to_vec())?;
-
-        let input_signature = self
-            .connection
-            .get_object("MSI_ACPI")?
-            .get_method(method)?
-            .with_context(|| format!("MSI_ACPI method '{method}' has no input signature"))?;
-        let input = input_signature.spawn_instance()?;
-        input.put_property("Data", Variant::Object(package))?;
-
-        let output = self
-            .connection
-            .exec_method(&self.path, method, Some(&input))?
-            .with_context(|| format!("MSI_ACPI method '{method}' returned no output"))?;
-        let embedded = match output.get_property("Data")? {
-            Variant::Object(object) => object,
-            other => bail!("MSI_ACPI method '{method}' returned unexpected Data: {other:?}"),
-        };
-        embedded
-            .get_property("Bytes")?
-            .try_into()
-            .with_context(|| format!("decode MSI_ACPI method '{method}' output bytes"))
-    }
-
-    pub fn get_ap(&self) -> Result<ApState> {
-        let raw = self.invoke_package32("Get_AP", [0u8; 32])?;
-        if raw.len() < 3 || raw[0] == 0 {
-            bail!("MSI_ACPI Get_AP returned an unsuccessful or short package");
-        }
-        let prefix_len = raw.len().min(8);
-        let raw_prefix = raw[..prefix_len]
-            .iter()
-            .map(|byte| format!("{byte:02X}"))
-            .collect::<Vec<_>>()
-            .join(" ");
-        Ok(ApState {
-            raw_prefix,
-            flag: raw[0],
-            data_byte1: raw[2],
-            apply_ready: raw[2] & 0x02 != 0,
-        })
-    }
-
-    pub fn set_data(&self, address: u8, value: u8) -> Result<()> {
-        let mut input = [0u8; 32];
-        input[0] = address;
-        input[1] = value;
-        let raw = self.invoke_package32("Set_Data", input)?;
-        if raw.first().copied().unwrap_or(0) == 0 {
-            bail!("MSI_ACPI Set_Data(0x{address:02X}) reported failure");
-        }
-        Ok(())
-    }
+    Ok(())
 }
 
 pub fn collect_snapshot(allow_unknown_hardware: bool) -> Result<StateSnapshot> {
@@ -594,18 +288,11 @@ pub fn collect_snapshot(allow_unknown_hardware: bool) -> Result<StateSnapshot> {
         elevated: is_elevated().unwrap_or(false),
         machine,
         secure_boot,
-        registry: query_registry_state(),
+        registry: platform::query_registry_state(),
         firmware,
         wmi_ap,
         display_devices: query_display_devices()?,
     })
-}
-
-pub fn backup_directory() -> Result<PathBuf> {
-    let root = std::env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .unwrap_or(std::env::current_dir()?);
-    Ok(root.join("msi-gpu-mux").join("backups"))
 }
 
 #[cfg(test)]
@@ -651,5 +338,30 @@ mod tests {
             assert_eq!(trigger & 0xfc, value & 0xfc);
             assert_eq!(trigger & 0x03, 0x01);
         }
+    }
+
+    #[test]
+    fn writable_variable_requires_exact_layout_and_attributes() {
+        let mut variable = baseline();
+        variable.bytes.pop();
+        assert!(validate_writable_variable(&variable).is_err());
+
+        let mut variable = baseline();
+        variable.attributes ^= 1;
+        assert!(validate_writable_variable(&variable).is_err());
+    }
+
+    #[test]
+    fn decodes_get_ap_success_and_ready_flag() {
+        let state = decode_ap_state(&[1, 0xaa, 0x82]).unwrap();
+        assert_eq!(state.flag, 1);
+        assert_eq!(state.data_byte1, 0x82);
+        assert!(state.apply_ready);
+    }
+
+    #[test]
+    fn rejects_unsuccessful_or_short_get_ap_package() {
+        assert!(decode_ap_state(&[0, 0, 0]).is_err());
+        assert!(decode_ap_state(&[1, 0]).is_err());
     }
 }

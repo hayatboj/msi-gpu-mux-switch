@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Linux diagnostics and mode switching using DMI, efivarfs, PCI sysfs, and the
+  kernel `msi-wmi-platform` debugfs interface.
+
+### Changed
+
+- Linux switching preserves the efivarfs inode flags around exact firmware
+  writes and retains the same hardware, BIOS, power, confirmation, preflight,
+  verification, rollback, and manual-shutdown protections as Windows.
+
 ## [0.1.0] - 2026-08-31
 
 ### Added

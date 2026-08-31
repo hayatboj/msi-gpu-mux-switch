@@ -2,10 +2,14 @@
 
 ## Scope
 
-This repository contains a Windows-only Rust command-line utility that
-implements the GPU MUX switching portion of MSI Center for the characterized
-MSI Vector 16 HX AI A2XWIG. The known motherboard is MS-15M3 and the validated
-BIOS is E15M3IMS.116.
+This repository contains a Rust command-line utility that implements GPU MUX
+diagnostics and switching on Windows and Linux for the characterized MSI Vector
+16 HX AI A2XWIG. The known motherboard is MS-15M3 and the validated BIOS is
+E15M3IMS.116.
+
+On Linux, UEFI access uses efivarfs and MSI ACPI access uses only the in-tree
+`msi-wmi-platform` driver's root-only debugfs interface. Do not add a direct AML
+call or a fallback transport without a new, deliberate safety review.
 
 Treat all firmware writes and MSI ACPI calls as safety-critical. Prefer an
 explicit failure over guessing a hardware contract or continuing from an
@@ -13,8 +17,11 @@ ambiguous state.
 
 ## Repository map
 
-- `src/lib.rs` contains mode encoding, UEFI access, WMI queries, MSI ACPI
-  access, diagnostics, and the platform-independent encoding tests.
+- `src/lib.rs` contains mode encoding, shared protocol validation, diagnostics,
+  and platform-independent tests.
+- `src/platform/mod.rs` defines the shared platform and ACPI traits and selects
+  the native implementation. `src/platform/windows.rs` and
+  `src/platform/linux.rs` contain all OS-specific system access.
 - `src/bin/msi-mux-switch.rs` contains the CLI, reporting, safety gates,
   confirmation, backup metadata, apply sequence, and rollback handling.
 - `build.rs` and `resources/` embed the Windows manifest that requires
@@ -134,8 +141,9 @@ handled explicitly. Review the human and JSON paths together.
 
 ## CI and releases
 
-- `.github/workflows/ci.yml` runs formatting, strict Clippy, tests, and a
-  release build for Windows AMD64 on pull requests and relevant branch pushes.
+- `.github/workflows/ci.yml` runs formatting, strict Clippy, tests, and release
+  builds for Windows AMD64 and Linux AMD64 on pull requests and relevant branch
+  pushes.
 - `.github/workflows/release.yml` builds and retains a Windows AMD64 ZIP on
   pull requests and `master` pushes. A pushed `v*` tag publishes the archive
   and aggregate `SHA256SUMS` as a GitHub Release; the workflow does not create

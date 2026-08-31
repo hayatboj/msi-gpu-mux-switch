@@ -1,9 +1,9 @@
 # MSI GPU MUX Switch
 
-`msi-mux-switch` is a small Windows command-line utility for changing the GPU
-MUX mode on the MSI Vector 16 HX AI A2XWIG. It is a clean-room implementation
-of the GPU switching function otherwise provided by MSI Center, without
-requiring MSI Center to be installed.
+`msi-mux-switch` is a small Windows and Linux command-line utility for
+inspecting and changing the GPU MUX mode on the MSI Vector 16 HX AI A2XWIG. It
+is a clean-room implementation of the GPU switching function otherwise
+provided by MSI Center, without requiring MSI Center to be installed.
 
 The supported modes are:
 
@@ -24,7 +24,7 @@ configuration:
 | Laptop | MSI Vector 16 HX AI A2XWIG |
 | Motherboard | MS-15M3 |
 | BIOS | E15M3IMS.116 |
-| Operating system | Windows |
+| Operating system | Windows or Linux |
 
 The program refuses to switch modes when the laptop model or motherboard does
 not match. It also refuses unvalidated BIOS versions. Explicit override flags
@@ -110,13 +110,39 @@ Run `msi-mux-switch.exe --help` for all options, including the deliberately
 named `--allow-unsupported-hardware` and `--allow-unvalidated-bios` development
 overrides.
 
+### Linux
+
+Linux diagnostics are available to an ordinary user:
+
+```bash
+cargo run --locked -- --debug
+cargo run --locked -- --debug --json
+```
+
+Switching requires root, AC power, writable EFI runtime services, and the
+in-tree `msi-wmi-platform` kernel driver with debugfs mounted. The driver was
+added in Linux 6.10. For example:
+
+```bash
+sudo target/release/msi-mux-switch discrete
+```
+
+The Linux implementation reads machine identity from DMI sysfs, accesses the
+UEFI variable through efivarfs, inventories display controllers through PCI
+sysfs, and performs the apply handshake only through the kernel driver's
+root-only debugfs method files. It validates the exact WMI GUID, ACPI parent,
+driver binding, method-file ownership, and permissions before use. The
+efivarfs immutable inode flag is restored after every attempted write.
+
 ## Safety and rollback behavior
 
 Before writing, the utility verifies the variable size and attributes, records
 the previous target and a SHA-256 hash under
-`%LOCALAPPDATA%\msi-gpu-mux\backups`, and changes only the target-mode bits. It
-then reads the complete variable back and verifies it before starting the ACPI
-apply handshake.
+`%LOCALAPPDATA%\msi-gpu-mux\backups` on Windows or
+`$XDG_STATE_HOME/msi-gpu-mux/backups` on Linux (falling back to
+`$HOME/.local/state`), and changes only the target-mode bits. It then reads the
+complete variable back and verifies it before starting the ACPI apply
+handshake.
 
 If the apply sequence fails after staging the target, the utility attempts to
 restore the previous target bits. If the firmware trigger had already been
@@ -156,8 +182,14 @@ The resulting executable is
 `target\release\msi-mux-switch.exe`. Its embedded application manifest asks
 Windows for Administrator privileges.
 
-The project intentionally supports Windows only. Building it for another
-operating system produces a compile-time error.
+On Linux, build with:
+
+```bash
+cargo build --locked --release
+```
+
+The resulting executable is `target/release/msi-mux-switch`. Switching requires
+root and the kernel interfaces described in the Linux usage section.
 
 ## License
 
