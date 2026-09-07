@@ -6,7 +6,7 @@ A native Qt 6 tray application for controlling the GPU MUX on a supported MSI la
 
 ![English KDE interface, using synthetic demo data](docs/images/kde-en.png)
 
-**Hardware validation status:** a live Linux **MSHybrid → Discrete** transition succeeded on the configuration below on 2026-09-07, using installed version **0.3.0-rc.1**. After the user manually shut down and powered on the laptop, firmware reported Discrete and the active internal eDP panel was driven directly by NVIDIA. This verifies one transition on this configuration; return to Hybrid, Integrated mode, and failure recovery remain unvalidated. The current release remains a **release candidate**. See the [test sequence and exact application commit](docs/VALIDATION.md#live-linux-hardware-observation).
+**Hardware validation status:** a live Linux **MSHybrid → Discrete → MSHybrid** round trip succeeded on the configuration below on 2026-09-07, using installed version **0.3.0-rc.1**. After each manual full shutdown and power-on, firmware and the active internal eDP route agreed: NVIDIA in Discrete, then Intel on return to Hybrid. The native 2560×1600 at 240 Hz display mode was preserved. This verifies both directions on this configuration; Integrated mode and failure recovery remain unvalidated. The current release remains a **release candidate**. See the [test sequence and exact application commit](docs/VALIDATION.md#live-linux-hardware-observation).
 
 | Supported configuration | Value |
 |---|---|

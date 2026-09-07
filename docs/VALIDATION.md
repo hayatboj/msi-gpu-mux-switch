@@ -34,7 +34,7 @@ Release packaging reruns on the release tag. Check its [release build](https://g
 
 ## Live Linux hardware observation
 
-One **MSHybrid → Discrete** transition was observed successfully on the reference laptop on **2026-09-07**. The installed application was **0.3.0-rc.1**, commit [`fda56b8905e988a73d3555b734ada4a38179f64a`](https://github.com/hayatboj/msi-gpu-mux-switch/commit/fda56b8905e988a73d3555b734ada4a38179f64a), with model **Vector 16 HX AI A2XWIG**, board **MS-15M3**, and BIOS **E15M3IMS.116**.
+A complete **MSHybrid → Discrete → MSHybrid** round trip was observed successfully on the reference laptop on **2026-09-07**. Both directions used the same installed application, **0.3.0-rc.1**, commit [`fda56b8905e988a73d3555b734ada4a38179f64a`](https://github.com/hayatboj/msi-gpu-mux-switch/commit/fda56b8905e988a73d3555b734ada4a38179f64a), with model **Vector 16 HX AI A2XWIG**, board **MS-15M3**, and BIOS **E15M3IMS.116**. No application code changed between the two tests.
 
 1. Privileged diagnostics on the preceding boot succeeded and showed apply-ready clear.
 2. The user explicitly approved the live Hybrid to Discrete test.
@@ -42,18 +42,21 @@ One **MSHybrid → Discrete** transition was observed successfully on the refere
 4. The user performed a manual full shutdown and power-on.
 5. Post-boot read-only status from the installed backend, captured at **2026-09-07T15:19:10+03:00**, reported both current mode and selected target as `discrete`, with `pending_shutdown=false` and `switching_supported=true`.
 6. The active internal connector **`card1-eDP-1`** was driven by **NVIDIA**, using the `nvidia` driver at **PCI `0000:01:00.0`**. PCI display enumeration showed only NVIDIA. KDE retained the native **2560×1600 at 240 Hz** display mode. This confirms the physical internal display route after the power cycle, beyond merely selecting a target mode.
+7. The user explicitly approved the reverse transition. After requesting Hybrid, another manual full shutdown and power-on was performed.
+8. Post-boot read-only status, captured at **2026-09-07T15:30:03+03:00**, reported both current mode and selected target as `ms-hybrid`, with `pending_shutdown=false` and `switching_supported=true`.
+9. The active internal connector **`card2-eDP-1`** was driven by **Intel**, using the `i915` driver at **PCI `0000:00:02.0`**. NVIDIA remained present, with its **`card1-eDP-2`** connector disconnected. KDE again reported **2560×1600 at 240 Hz**. This confirms the physical return of the internal display to Intel in Hybrid mode.
 
-This record summarizes the observations without publishing raw firmware or diagnostic captures. **Return to Hybrid, Integrated mode, and live failure recovery remain unvalidated.** One successful transition does not establish compatibility with other BIOS versions or laptops, or guarantee recovery from a failed operation.
+This record summarizes the observations without publishing raw firmware or diagnostic captures. **Integrated mode and live failure recovery remain unvalidated.** This successful round trip does not establish compatibility with other BIOS versions or laptops, or guarantee recovery from a failed operation.
 
 ## Hardware release gate
 
 - [x] Privileged diagnostics succeed with apply-ready clear.
-- [x] User explicitly approves the live Hybrid to Discrete test.
+- [x] User explicitly approves the live Hybrid to Discrete and return-to-Hybrid tests.
 - [x] Hybrid to Discrete request succeeds on the reference laptop, including acknowledgement.
 - [x] Complete manual shutdown and power-on performed.
 - [x] Firmware reports Discrete and active internal eDP is NVIDIA-driven.
-- [ ] Return to Hybrid verified after another full shutdown/power-on.
+- [x] Return to Hybrid verified after another full shutdown/power-on, with active internal eDP driven by Intel.
 - [ ] Integrated mode separately validated; it remains unvalidated.
 - [x] Tested application commit and BIOS/EC versions recorded.
 
-The release remains a prerelease with the tested direction and outstanding validation limits stated explicitly. Never intentionally cause a real firmware failure to test recovery.
+The release remains a prerelease with the tested directions and outstanding validation limits stated explicitly. Never intentionally cause a real firmware failure to test recovery.

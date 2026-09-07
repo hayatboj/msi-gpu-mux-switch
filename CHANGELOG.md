@@ -9,13 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Documented a successful live Linux MSHybrid to Discrete transition on the
+- Documented a successful live Linux MSHybrid to Discrete and back to MSHybrid round trip on the
   MSI Vector 16 HX AI A2XWIG / MS-15M3 / E15M3IMS.116, using installed
   `0.3.0-rc.1` at commit `fda56b8905e988a73d3555b734ada4a38179f64a`.
   Privileged preflight showed apply-ready clear; the user approved the test,
   the request was acknowledged, and the internal eDP panel was verified as
   NVIDIA-driven after a manual full shutdown and power-on on 2026-09-07.
-  Return to Hybrid, Integrated mode, and live failure recovery remain unvalidated;
+  The user-approved reverse test then verified Hybrid firmware state and an
+  Intel-driven internal eDP panel after another manual full shutdown and power-on.
+  Both directions retained 2560×1600 at 240 Hz, using the same installed version.
+  Integrated mode and live failure recovery remain unvalidated;
   the release remains a release candidate.
 
 ## [0.3.0-rc.1] - 2026-09-07
