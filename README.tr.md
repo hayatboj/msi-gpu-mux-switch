@@ -6,7 +6,7 @@ Desteklenen MSI dizüstünde fiziksel GPU MUX modunu KDE sistem tepsisinden yön
 
 ![Türkçe KDE arayüzü; sentetik demo verisi kullanılmıştır](docs/images/kde-tr.png)
 
-**Donanım doğrulama durumu:** Temel alınan projenin Windows yolu aşağıdaki cihazda test edilmiş olarak bildiriliyor. Linux’ta tanılama çalışıyor. Gerçek Linux geçişi ve geri dönüşü için cihaz üzerinde belgelenmiş doğrulama henüz gerekiyor. Bu tamamlanana kadar sürüm bir **sürüm adayıdır**; bütün MSI cihazlarında çalıştığı veya donanımda tam doğrulandığı iddia edilmez.
+**Donanım doğrulama durumu:** Aşağıdaki yapılandırmada, kurulu **0.3.0-rc.1** sürümüyle Linux üzerinde gerçek **Hibrit → Ayrık** geçişi 7 Eylül 2026’da başarılı oldu. Kullanıcı bilgisayarı elle tamamen kapatıp yeniden açtıktan sonra firmware Ayrık mod bildirdi ve aktif dahili eDP panelinin doğrudan NVIDIA tarafından sürüldüğü doğrulandı. Bu sonuç yalnız bu yapılandırmadaki bir geçişi doğrular; Hibrit’e geri dönüş, Entegre mod ve hata sonrası kurtarma henüz doğrulanmadı. Yazılım **sürüm adayı** olarak kalıyor. [Test adımları ve kullanılan uygulama commit’i](docs/VALIDATION.md#live-linux-hardware-observation) doğrulama kaydında bulunuyor.
 
 | Desteklenen yapılandırma | Değer |
 |---|---|

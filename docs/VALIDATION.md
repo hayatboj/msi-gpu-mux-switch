@@ -8,14 +8,14 @@ MSI Vector 16 HX AI A2XWIG / MS-15M3; BIOS E15M3IMS.116, EC 15M3EMS1.113. Intel 
 
 No serial numbers, raw firmware, account identifiers, or encryption material belong here.
 
-## Read-only observations
+## Initial read-only observations
 
 - Model, motherboard, BIOS and MSI WMI binding match.
 - OEM variable has the expected 20-byte payload and attributes `0x00000007`.
 - Requested and current modes decode as MSHybrid; Discrete/Integrated capability bits are present.
 - Starting internal eDP route is Intel.
 
-These observations do not validate a write.
+These observations describe the starting state before the live test below. Read-only diagnostics alone do not validate a write.
 
 ## Software release gate
 
@@ -32,15 +32,28 @@ Local software checks above completed on 2026-09-07. See [CI](https://github.com
 
 Release packaging reruns on the release tag. Check its [release build](https://github.com/hayatboj/msi-gpu-mux-switch/actions/workflows/release.yml) and downloaded `SHA256SUMS` when installing; the results above identify the tested implementation, not arbitrary future commits. GitHub Linux archives build on Ubuntu 24.04 with system Qt 6 and do not bundle Qt.
 
+## Live Linux hardware observation
+
+One **MSHybrid → Discrete** transition was observed successfully on the reference laptop on **2026-09-07**. The installed application was **0.3.0-rc.1**, commit [`fda56b8905e988a73d3555b734ada4a38179f64a`](https://github.com/hayatboj/msi-gpu-mux-switch/commit/fda56b8905e988a73d3555b734ada4a38179f64a), with model **Vector 16 HX AI A2XWIG**, board **MS-15M3**, and BIOS **E15M3IMS.116**.
+
+1. Privileged diagnostics on the preceding boot succeeded and showed apply-ready clear.
+2. The user explicitly approved the live Hybrid to Discrete test.
+3. The Discrete request completed successfully, including the firmware acknowledgement.
+4. The user performed a manual full shutdown and power-on.
+5. Post-boot read-only status from the installed backend, captured at **2026-09-07T15:19:10+03:00**, reported both current mode and selected target as `discrete`, with `pending_shutdown=false` and `switching_supported=true`.
+6. The active internal connector **`card1-eDP-1`** was driven by **NVIDIA**, using the `nvidia` driver at **PCI `0000:01:00.0`**. PCI display enumeration showed only NVIDIA. KDE retained the native **2560×1600 at 240 Hz** display mode. This confirms the physical internal display route after the power cycle, beyond merely selecting a target mode.
+
+This record summarizes the observations without publishing raw firmware or diagnostic captures. **Return to Hybrid, Integrated mode, and live failure recovery remain unvalidated.** One successful transition does not establish compatibility with other BIOS versions or laptops, or guarantee recovery from a failed operation.
+
 ## Hardware release gate
 
-- [ ] Privileged diagnostics succeed with apply-ready clear.
-- [ ] Actual operation and recovery limits reviewed by the user.
-- [ ] Hybrid to Discrete request succeeds on the reference laptop.
-- [ ] Complete shutdown and power-on performed.
-- [ ] Firmware reports Discrete and active internal eDP is NVIDIA-driven.
+- [x] Privileged diagnostics succeed with apply-ready clear.
+- [x] User explicitly approves the live Hybrid to Discrete test.
+- [x] Hybrid to Discrete request succeeds on the reference laptop, including acknowledgement.
+- [x] Complete manual shutdown and power-on performed.
+- [x] Firmware reports Discrete and active internal eDP is NVIDIA-driven.
 - [ ] Return to Hybrid verified after another full shutdown/power-on.
-- [ ] Integrated mode separately validated or explicitly remains unvalidated.
-- [ ] Tested application commit and BIOS/EC versions recorded.
+- [ ] Integrated mode separately validated; it remains unvalidated.
+- [x] Tested application commit and BIOS/EC versions recorded.
 
-Until hardware validation is complete, publish a prerelease and label Linux switching experimental. Never intentionally cause a real firmware failure to test recovery.
+The release remains a prerelease with the tested direction and outstanding validation limits stated explicitly. Never intentionally cause a real firmware failure to test recovery.
