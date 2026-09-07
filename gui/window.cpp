@@ -564,9 +564,11 @@ void Window::shutdown() {
     auto *description = label(&dialog, {}, true);
     description->setText(t(hasDraft ? Text::DraftPowerDetail : Text::PowerSuccessDetail).arg(modeName(status.current, m_language), modeName(selectedTarget, m_language)));
     layout->addWidget(description);
-    auto *restartNote = label(&dialog, QStringLiteral("muted"), true);
-    restartNote->setText(m_backend.demo() ? t(Text::PowerRequestDemo) : t(Text::RestartUnverified));
-    layout->addWidget(restartNote);
+    if (m_backend.demo()) {
+        auto *demoNote = label(&dialog, QStringLiteral("muted"), true);
+        demoNote->setText(t(Text::PowerRequestDemo));
+        layout->addWidget(demoNote);
+    }
     auto *buttons = new QDialogButtonBox(&dialog);
     auto *later = buttons->addButton(t(Text::Later), QDialogButtonBox::RejectRole);
     auto *restart = buttons->addButton(t(Text::Restart), QDialogButtonBox::ActionRole);

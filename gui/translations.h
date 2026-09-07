@@ -20,7 +20,7 @@ enum class Text {
     Version, NoPanel, Disabled, PermissionDenied, InvalidResponse,
     NoChanges, NotificationsUnavailable, ShowAfterStart, RecoveryRequired, AcpiUnavailable,
     About, WhatsNew, ReducedMotion, CurrentToTarget, HeroPendingDetail, PowerCyclePending,
-    LiveMode, PowerOptions, PowerSuccessTitle, PowerSuccessDetail, Restart, RestartUnverified,
+    LiveMode, PowerOptions, PowerSuccessTitle, PowerSuccessDetail, Restart,
     Later, PowerRequestSent, PowerRequestCancelled, PowerRequestDenied, PowerRequestUnavailable,
     PowerRequestFailed, PowerRequestDemo, Target, GnomeSetup, GnomeSetupDetail,
     DraftTitle, DraftDetail, DraftSelected, ClearDraft, DraftPowerTitle, DraftPowerDetail,

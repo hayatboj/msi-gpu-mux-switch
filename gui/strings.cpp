@@ -86,7 +86,6 @@ static constexpr std::array<Translation, static_cast<size_t>(Text::Count)> trans
     {"Your new mode is ready", "Yeni modun hazır"},
     {"The target is %2; %1 is still active in this session. Save your work and close your applications before continuing. A full shutdown and power-on is the verified way to finish the switch.", "Hedef %2; bu oturumda %1 hâlâ etkin. Devam etmeden önce işlerini kaydet ve uygulamalarını kapat. Geçişi tamamlamak için doğrulanan yöntem tam kapatma ve yeniden açmadır."},
     {"Restart…", "Yeniden başlat…"},
-    {"Restart is optional. A warm restart has not been verified to complete the MUX switch; if the mode stays unchanged, perform a full shutdown.", "Yeniden başlatma isteğe bağlıdır. MUX geçişini tamamladığı doğrulanmadı; mod değişmezse bilgisayarı tamamen kapat."},
     {"Later", "Daha sonra"},
     {"The request was sent to your desktop. The graphics mode is checked again after the computer starts.", "İstek masaüstüne iletildi. Grafik modu bilgisayar açıldıktan sonra yeniden kontrol edilir."},
     {"The desktop cancelled the power request. Your current session is still active.", "Masaüstü güç isteğini iptal etti. Mevcut oturumun hâlâ açık."},
