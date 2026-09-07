@@ -12,7 +12,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import install as installer
 from install import load_package, trusted_parents
-from managed_files import FILES
+from managed_files import FILES, RECORD
 from uninstall import uninstall
 
 
@@ -129,6 +129,79 @@ class SimulatedInstall(unittest.TestCase):
         installer.install(self.root, self.destination)
         uninstall(self.destination)
         self.assertTrue(all(not (self.destination / name).exists() for name in FILES))
+
+    def prepare_upgrade(self):
+        """Different release payloads and a synthetic journal, all in the temp tree."""
+        def package_version(version):
+            lines = []
+            for name in FILES:
+                data = f"synthetic {version} fixture: {name}".encode()
+                (self.root / "payload" / name).write_bytes(data)
+                lines.append(f"{hashlib.sha256(data).hexdigest()}  {name}\n")
+            self.manifest.write_text("".join(lines), encoding="ascii")
+
+        package_version("0.3.0-rc.1")
+        installer.install(self.root, self.destination)
+        originals = {name: (self.destination / name).read_bytes() for name in FILES}
+        record = (self.destination / RECORD).read_bytes()
+        journal = self.destination / "var/lib/msi-mux/transaction.json"
+        journal.write_bytes(b'{"synthetic_test_fixture":true}\n')
+        journal.chmod(0o600)
+        package_version("0.3.0")
+        return originals, record, journal, journal.read_bytes()
+
+    def test_rc1_to_stable_replaces_files_atomically_and_retains_journal(self):
+        originals, _, journal, journal_data = self.prepare_upgrade()
+        old_inodes = {name: (self.destination / name).stat().st_ino for name in FILES}
+        installer.install(self.root, self.destination)
+        _, expected_hashes = load_package(self.root)
+        self.assertEqual(installer.read_installed(self.destination)["files"], expected_hashes)
+        for name, mode in FILES.items():
+            path = self.destination / name
+            self.assertNotEqual(path.read_bytes(), originals[name])
+            self.assertEqual(path.read_bytes(), (self.root / "payload" / name).read_bytes())
+            self.assertNotEqual(path.stat().st_ino, old_inodes[name])
+            self.assertEqual(path.stat().st_mode & 0o777, mode)
+        self.assertEqual(journal.read_bytes(), journal_data)
+        self.assertEqual(journal.stat().st_mode & 0o777, 0o600)
+        uninstall(self.destination)
+        self.assertEqual(journal.read_bytes(), journal_data)
+
+    def test_modified_rc1_file_blocks_stable_upgrade_before_replacement(self):
+        originals, record, journal, journal_data = self.prepare_upgrade()
+        # A late inventory entry ensures validation finishes before any replacement.
+        name = list(FILES)[-1]
+        changed = self.destination / name
+        changed.write_bytes(b"local modification")
+        with mock.patch.object(installer, "atomic_write") as write:
+            with self.assertRaisesRegex(ValueError, "modified file"):
+                installer.install(self.root, self.destination)
+            write.assert_not_called()
+        for original_name, data in originals.items():
+            expected = b"local modification" if original_name == name else data
+            self.assertEqual((self.destination / original_name).read_bytes(), expected)
+        self.assertEqual((self.destination / RECORD).read_bytes(), record)
+        self.assertEqual(journal.read_bytes(), journal_data)
+
+    def test_failed_stable_upgrade_restores_rc1_and_retains_journal(self):
+        originals, record, journal, journal_data = self.prepare_upgrade()
+        original_write = installer.atomic_write
+        failed = False
+
+        def fail_once(path, data, mode):
+            nonlocal failed
+            if path.name == "msi-mux-helper" and not failed:
+                failed = True
+                raise OSError("synthetic upgrade failure")
+            original_write(path, data, mode)
+
+        with mock.patch.object(installer, "atomic_write", fail_once):
+            with self.assertRaisesRegex(OSError, "synthetic upgrade failure"):
+                installer.install(self.root, self.destination)
+        for name, data in originals.items():
+            self.assertEqual((self.destination / name).read_bytes(), data)
+        self.assertEqual((self.destination / RECORD).read_bytes(), record)
+        self.assertEqual(journal.read_bytes(), journal_data)
 
     def test_modified_file_blocks_uninstall_and_update(self):
         installer.install(self.root, self.destination)

@@ -4,9 +4,7 @@
 
 A native Qt 6 tray application for controlling the GPU MUX on a supported MSI laptop. See the current graphics mode, right-click the KDE system tray icon to choose a mode, and switch between English and Turkish without restarting the application.
 
-![English KDE interface, using synthetic demo data](docs/images/kde-en.png)
-
-**Hardware validation status:** a live Linux **MSHybrid → Discrete → MSHybrid** round trip succeeded on the configuration below on 2026-09-07, using installed version **0.3.0-rc.1**. After each manual full shutdown and power-on, firmware and the active internal eDP route agreed: NVIDIA in Discrete, then Intel on return to Hybrid. The native 2560×1600 at 240 Hz display mode was preserved. This verifies both directions on this configuration; Integrated mode and failure recovery remain unvalidated. The current release remains a **release candidate**. See the [test sequence and exact application commit](docs/VALIDATION.md#live-linux-hardware-observation).
+**Version 0.3.0 is stable for Hybrid and Discrete switching on the exact configuration below.** Three live Linux transitions—**MSHybrid → Discrete → MSHybrid → Discrete**—succeeded on 2026-09-07. After each manual full shutdown and power-on, firmware modes and the active internal eDP route agreed, retaining **2560×1600 at 240 Hz**. The firmware protocol engine is unchanged from the installed **0.3.0-rc.1** build used for those tests. **Integrated mode remains experimental and is disabled by default in the desktop application; it requires an explicit settings opt-in.** See the [test sequence, timestamps, and application commit](docs/VALIDATION.md#live-linux-hardware-observation).
 
 | Supported configuration | Value |
 |---|---|
@@ -18,10 +16,13 @@ A native Qt 6 tray application for controlling the GPU MUX on a supported MSI la
 
 Other MSI laptops and BIOS versions are not enabled by the desktop application. Having an NVIDIA GPU, or a similarly named MSI model, is not sufficient.
 
+![English KDE interface, using synthetic demo data](docs/images/kde-en.png)
+
 ## Features
 
 - Current firmware mode and requested next mode shown separately.
-- Hybrid, Discrete, and Integrated modes when advertised by the firmware.
+- Validated Hybrid and Discrete modes when advertised by the firmware.
+- Experimental Integrated mode behind an explicit desktop settings opt-in.
 - Actual GPU driving the internal panel.
 - KDE tray menu, compact status window, English/Turkish UI, optional login startup.
 - Polkit authorization through a narrowly scoped helper; the GUI never runs as root.
@@ -33,7 +34,9 @@ This changes the hardware graphics mode. PRIME render offload selects the GPU us
 
 ## Using the tray
 
-Open **MSI MUX** from the application launcher. Right-click its tray icon to see the current mode and choose an available mode. Left-click to open the status window. The language menu switches between **English** and **Türkçe**. Startup at login is optional.
+Open **MSI MUX** from the application launcher. Right-click its tray icon to see the current mode and choose an available mode. Left-click to open the status window. The language menu switches between **English** and **Türkçe**. Startup at login is optional. The tray icon follows KDE system tray availability, including when the tray becomes available after application startup.
+
+Hybrid and Discrete are the default choices. Integrated is outside the validated release scope and is available only after explicitly enabling experimental modes in settings. This preference does not bypass hardware, BIOS, power, or firmware checks.
 
 Switching requires AC power, matching hardware/BIOS, readable firmware state, and no unresolved previous transaction. After a successful request, the application displays a pending shutdown state; it does not pretend that the physical display connection has already changed.
 
@@ -58,7 +61,7 @@ Development dependencies: Rust 1.88+, CMake, a C++20 compiler, Python 3, and Qt 
 
 ```sh
 ./scripts/build-linux.sh
-./scripts/package-linux.sh 0.3.0-rc.1
+./scripts/package-linux.sh 0.3.0
 ```
 
 Arch packaging is in [`packaging/`](packaging/). The running kernel needs the MSI WMI platform driver for detailed diagnostics and mode changes.
@@ -89,15 +92,19 @@ msi-mux-switch --debug --json
 
 A successful diagnostic is not proof that physical switching or recovery has succeeded.
 
+The CLI retains Integrated mode for deliberate advanced use. Human-readable switching requires the original mode-specific typed confirmation. `--json` is intended for scripts and skips that prompt only; it retains all backend safety checks and provides no hardware or BIOS override.
+
 ## Development
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md), and the [validation record](docs/VALIDATION.md). CI tests synthetic firmware failures, GUI parsing and gating, localization, helper restrictions, and installation boundaries. It also builds the preserved Windows CLI.
+
+Release bundles are built only from `v*` tag pushes or manual workflow dispatch. Publication requires a matching version tag and successful Linux and Windows validation/build jobs.
 
 Never run a real firmware write as a unit test, installation check, screenshot step, or CI action. Hardware validation is a separate operation followed by complete shutdown and post-boot verification.
 
 ## Limits
 
-The tool writes an OEM UEFI variable and invokes MSI ACPI methods. Failure after a trigger can leave the hardware outcome uncertain. Returning previous target bits does not reverse every hardware action. BIOS defaults or an EC reset are not guaranteed recovery. Read [the recovery notes](docs/RECOVERY.md) before a first hardware trial.
+The tool writes an OEM UEFI variable and invokes MSI ACPI methods. Failure after a trigger can leave the hardware outcome uncertain. Returning previous target bits does not reverse every hardware action. BIOS defaults or an EC reset are not guaranteed recovery. The successful Hybrid/Discrete tests establish the supported default workflow on the listed configuration; they do not establish a universal recovery procedure. Synthetic tests cover failure handling without deliberately disrupting real firmware. Read [the recovery notes](docs/RECOVERY.md) before first use.
 
 ## Upstream and license
 

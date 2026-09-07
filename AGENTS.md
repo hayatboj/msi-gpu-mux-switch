@@ -5,7 +5,10 @@
 This repository contains a Rust command-line utility that implements GPU MUX
 diagnostics and switching on Windows and Linux for the characterized MSI Vector
 16 HX AI A2XWIG. The known motherboard is MS-15M3 and the validated BIOS is
-E15M3IMS.116.
+E15M3IMS.116. Stable version 0.3.0 covers the verified Hybrid/Discrete desktop
+workflow on that exact configuration. Three full shutdown/power-on transitions
+are recorded in `docs/VALIDATION.md`. Integrated remains experimental and
+requires explicit desktop settings opt-in; capability bits alone do not validate it.
 
 On Linux, UEFI access uses efivarfs and MSI ACPI access uses only the in-tree
 `msi-wmi-platform` driver's root-only debugfs interface. Do not add a direct AML
@@ -82,6 +85,8 @@ Preserve these protections when changing the switching flow:
 - Keep routine `--status` polling unprivileged and free of ACPI calls.
 - A target restoration is not a guarantee of full hardware rollback.
 - Keep the GUI unprivileged. Invoke only the fixed installed Polkit helper.
+- Keep experimental Integrated mode disabled by default in the desktop. Opt-in
+  must not bypass backend identity, capability, power, or transaction checks.
 
 Keep probes and tests that can mutate firmware opt-in and separate from the
 normal unit-test suite. Never exercise real firmware writes merely to validate
@@ -157,13 +162,20 @@ mode. Never switch a real MUX or shut down the host as an automated test.
 - `.github/workflows/ci.yml` runs formatting, strict Clippy, tests, and release
   builds for Windows AMD64 and Linux AMD64 on pull requests and relevant branch
   pushes.
-- `.github/workflows/release.yml` builds and retains Windows AMD64 and Linux
-  AMD64 bundles on pull requests and `master`/`linux-kde` pushes. A pushed `v*` tag publishes
-  the archives and aggregate `SHA256SUMS` as a GitHub Release; the workflow
-  does not create the tag.
+- `.github/workflows/release.yml` runs only for `v*` tag pushes or manual
+  `workflow_dispatch`. It builds and retains Windows AMD64 and Linux AMD64
+  bundles. Publication requires a `v*` tag reference and successful validation
+  and build jobs for both platforms; the Linux tag must match the Cargo version.
+  The archives and aggregate `SHA256SUMS` are then published as a GitHub Release.
+  The workflow does not create the tag.
 - Linux archives contain the tray, backend, restricted helper, desktop metadata,
   validated installer/uninstaller and checksums. Windows archives retain the CLI.
-- Keep Linux releases marked experimental/prerelease until documented hardware
-  validation has completed. CI cannot establish physical MUX behavior.
+- Stable release scope is the documented Hybrid/Discrete workflow on the exact
+  tested model/board/BIOS. Keep Integrated experimental and opt-in until separately
+  validated. New hardware or protocol changes need their own evidence; do not
+  generalize the existing result. CI cannot establish physical MUX behavior.
+- Use synthetic fault injection to validate failure handling. Do not require or
+  intentionally cause real firmware failure as a stable-release gate. Recovery
+  limits must remain explicit even for a stable release.
 - Keep external GitHub Actions pinned to full commit hashes with a version
   comment. Do not replace pins with movable tags or branches.

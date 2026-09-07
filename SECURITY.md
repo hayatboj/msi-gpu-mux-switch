@@ -18,10 +18,10 @@ Installed executables, policies, and parent directories must be root-controlled 
 
 Restoring the selected mode is not a complete firmware rollback. A firmware method can take effect before its response fails. A crash or power interruption can skip in-process recovery. Durable metadata preserves that uncertainty and prevents an automatic repeat attempt.
 
-Metadata is not a full BIOS backup. Do not commit raw firmware. CLI development overrides must never be exposed through the desktop helper.
+Metadata is not a full BIOS backup. Do not commit raw firmware. The CLI and desktop helper provide no hardware or BIOS write bypasses. Integrated is an advanced experimental CLI mode and requires separate desktop settings opt-in; that opt-in does not weaken backend safety checks.
 
-Linux switching remains experimental until real shutdown/boot cycles have been documented. Passing tests does not replace hardware validation.
+Stable version `0.3.0` covers Hybrid/Discrete switching on the exact Vector 16 HX AI A2XWIG / MS-15M3 / E15M3IMS.116 configuration. Three successful real transitions with full shutdown/power-on cycles are recorded in [the validation record](docs/VALIDATION.md). Integrated switching and recovery from an actual firmware failure have not been validated. Stable status does not promise recovery from every failure or support for other firmware versions.
 
 ## Tests
 
-Regression tests must cover rejection paths and partial failures. CI must not load writable EC modules, invoke real apply methods, change UEFI variables, or power off a host.
+Regression tests must cover rejection paths and partial failures using synthetic inputs and injected failures. Deliberately causing a real firmware failure is not a release requirement. CI must not load writable EC modules, invoke real apply methods, change UEFI variables, or power off a host.

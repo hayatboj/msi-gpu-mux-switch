@@ -21,7 +21,7 @@ class Window final : public QMainWindow {
 public:
     Window(bool demo, Language language, bool trayEnabled = true, QWidget *parent = nullptr);
     void showPanel();
-    bool hasTray() const { return m_tray.isVisible(); }
+    bool hasTray() const { return m_tray.isVisible() && QSystemTrayIcon::isSystemTrayAvailable(); }
     Backend *backend() { return &m_backend; }
 
 protected:
@@ -36,6 +36,7 @@ private:
     void showDetails(const QString &title, const QString &message, const QString &details);
     void setLanguage(Language language);
     void setAutostart(bool enabled);
+    void setExperimentalIntegrated(bool enabled);
     void requestQuit();
     QString t(Text text) const { return Mux::tr(text, m_language); }
     QString panelLabel() const;
@@ -53,6 +54,7 @@ private:
     QAction *m_openAction = nullptr;
     QAction *m_refreshAction = nullptr;
     QAction *m_autostartAction = nullptr;
+    QAction *m_experimentalIntegratedAction = nullptr;
     QAction *m_quitAction = nullptr;
     QAction *m_englishAction = nullptr;
     QAction *m_turkishAction = nullptr;

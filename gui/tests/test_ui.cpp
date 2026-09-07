@@ -211,6 +211,71 @@ private slots:
         QVERIFY(!backend.status().canSwitch(Mode::Integrated));
     }
 
+    void integratedRequiresExplicitOptInAtApplyBoundary() {
+        Backend backend(true);
+        backend.refresh();
+        QVERIFY(!backend.experimentalIntegratedEnabled());
+        QVERIFY(backend.canApplyMode(Mode::Discrete));
+        QVERIFY(!backend.canApplyMode(Mode::Integrated));
+        QSignalSpy applied(&backend, &Backend::applyFinished);
+        backend.apply(Mode::Integrated);
+        QVERIFY(!backend.busy());
+        QCOMPARE(backend.m_apply.state(), QProcess::NotRunning);
+        QCOMPARE(backend.status().target, Mode::Hybrid);
+        QCOMPARE(applied.size(), 0);
+
+        backend.setExperimentalIntegratedEnabled(true);
+        QVERIFY(backend.canApplyMode(Mode::Integrated));
+        backend.setExperimentalIntegratedEnabled(false);
+        backend.apply(Mode::Integrated);
+        QVERIFY(!backend.busy());
+        QCOMPARE(applied.size(), 0);
+
+        backend.setExperimentalIntegratedEnabled(true);
+        backend.apply(Mode::Integrated);
+        QVERIFY(backend.busy());
+        QCOMPARE(backend.m_apply.state(), QProcess::NotRunning);
+        QVERIFY(applied.wait(3000));
+        QVERIFY(applied.first().first().toBool());
+        QCOMPARE(backend.status().target, Mode::Integrated);
+        QVERIFY(backend.status().pendingShutdown);
+    }
+
+    void experimentalOptInDoesNotBypassHardwareGates() {
+        Backend backend(true);
+        backend.refresh();
+        backend.setExperimentalIntegratedEnabled(true);
+        backend.m_status.acPower = false;
+        QVERIFY(!backend.canApplyMode(Mode::Integrated));
+        backend.apply(Mode::Integrated);
+        QVERIFY(!backend.busy());
+        backend.m_status.acPower = true;
+        backend.m_status.integratedSupported = false;
+        QVERIFY(!backend.canApplyMode(Mode::Integrated));
+        backend.apply(Mode::Integrated);
+        QVERIFY(!backend.busy());
+        QCOMPARE(backend.m_apply.state(), QProcess::NotRunning);
+    }
+
+    void disablingExperimentalModeStillAllowsReturningToValidatedModes() {
+        Backend backend(true);
+        backend.refresh();
+        backend.m_status.current = Mode::Integrated;
+        backend.m_status.target = Mode::Integrated;
+        QVERIFY(!backend.experimentalIntegratedEnabled());
+        QVERIFY(backend.canApplyMode(Mode::Hybrid));
+        QVERIFY(backend.canApplyMode(Mode::Discrete));
+    }
+
+    void experimentalModeTextIsExplicitInBothLanguages() {
+        QVERIFY(Mux::tr(Text::IntegratedExperimental, Language::English).contains(QStringLiteral("Experimental")));
+        QVERIFY(Mux::tr(Text::IntegratedExperimental, Language::Turkish).contains(QStringLiteral("Deneysel")));
+        QVERIFY(Mux::tr(Text::EnableExperimentalIntegrated, Language::English).contains(QStringLiteral("Enable")));
+        QVERIFY(Mux::tr(Text::EnableExperimentalIntegrated, Language::Turkish).contains(QStringLiteral("etkinleştir")));
+        QVERIFY(Mux::tr(Text::ExperimentalDetail, Language::English).contains(QStringLiteral("E15M3IMS.116")));
+        QVERIFY(Mux::tr(Text::ExperimentalDetail, Language::Turkish).contains(QStringLiteral("E15M3IMS.116")));
+    }
+
     void orderlyDestructionDoesNotKillApply() {
         QTemporaryDir directory;
         const auto marker = directory.filePath(QStringLiteral("completed"));

@@ -18,7 +18,8 @@ enum class Text {
     ApplyFailed, ApplyUncertain, Details, Close, ShutdownTitle, ShutdownConfirm,
     ShutdownFailed, DemoApply, Error, AutostartFailed, AlreadyRunning,
     Version, NoPanel, Disabled, PermissionDenied, InvalidResponse,
-    NoChanges, NotificationsUnavailable, ShowAfterStart, RecoveryRequired, AcpiUnavailable, Count
+    NoChanges, NotificationsUnavailable, ShowAfterStart, RecoveryRequired, AcpiUnavailable,
+    EnableExperimentalIntegrated, IntegratedExperimental, IntegratedOptInRequired, IntegratedRisk, Count
 };
 QString tr(Text key, Language language);
 QString modeName(Mode mode, Language language);

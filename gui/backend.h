@@ -16,6 +16,9 @@ public:
     bool busy() const { return m_applying; }
     bool refreshing() const { return m_probe.state() != QProcess::NotRunning; }
     bool demo() const { return m_demo; }
+    bool experimentalIntegratedEnabled() const { return m_experimentalIntegratedEnabled; }
+    void setExperimentalIntegratedEnabled(bool enabled) { m_experimentalIntegratedEnabled = enabled; }
+    bool canApplyMode(Mode mode) const;
     const Status &status() const { return m_status; }
     void refresh();
     void apply(Mode mode);
@@ -39,6 +42,7 @@ private:
     bool m_probeFailed = false;
     bool m_applyOverflow = false;
     bool m_destroying = false;
+    bool m_experimentalIntegratedEnabled = false;
     Status m_status;
     Mode m_requested = Mode::Unknown;
     QProcess m_probe;

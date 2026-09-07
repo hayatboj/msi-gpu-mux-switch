@@ -97,8 +97,15 @@ void Backend::finishProbe(int exitCode, QProcess::ExitStatus exitStatus) {
     emit refreshingChanged(false);
 }
 
+bool Backend::canApplyMode(Mode mode) const {
+    return (mode != Mode::Integrated || m_experimentalIntegratedEnabled) &&
+        m_status.canSwitch(mode, m_applying) && !refreshing();
+}
+
 void Backend::apply(Mode mode) {
-    if (!m_status.canSwitch(mode, m_applying) || refreshing()) return;
+    // Keep the opt-in at the execution boundary, including calls that bypass a
+    // disabled button or race a preference change while confirmation is open.
+    if (!canApplyMode(mode)) return;
     m_requested = mode;
     m_applying = true;
     emit busyChanged(true);

@@ -1,6 +1,8 @@
 # Validation record
 
-Software tests and live hardware tests are separate. Record observed results; a passing build does not establish physical MUX switching.
+**Stable 0.3.0 scope:** Hybrid and Discrete switching on MSI Vector 16 HX AI A2XWIG / MS-15M3 / E15M3IMS.116. Three successful live transitions are recorded below. Integrated remains experimental, disabled by default in the desktop, and available only after an explicit settings opt-in.
+
+Software tests and live hardware tests are separate. Record observed results; a passing build does not establish physical MUX switching or guarantee hardware recovery.
 
 ## Reference environment
 
@@ -17,7 +19,7 @@ No serial numbers, raw firmware, account identifiers, or encryption material bel
 
 These observations describe the starting state before the live test below. Read-only diagnostics alone do not validate a write.
 
-## Software release gate
+## Software validation baseline
 
 - [x] Rust formatting, strict Clippy on Linux/Windows targets, and 22 Rust tests pass.
 - [x] Failure tests cover ambiguous ACPI completion, durable phases, stale state, and journal recovery classification.
@@ -28,35 +30,54 @@ These observations describe the starting state before the live test below. Read-
 - [x] Linux and native Windows CI pass on implementation commit `3109232`; [recorded CI run](https://github.com/hayatboj/msi-gpu-mux-switch/actions/runs/34119405294).
 - [x] Linux/Windows bundles build from that commit; the Linux archive checksum and complete 16-file payload validate. Both GitHub-built Linux executables launch on CachyOS; [build run](https://github.com/hayatboj/msi-gpu-mux-switch/actions/runs/34119405288).
 
-Local software checks above completed on 2026-09-07. See [CI](https://github.com/hayatboj/msi-gpu-mux-switch/actions/workflows/ci.yml) for the exact commit's remote Linux/Windows results. Demo tests never invoked the privileged helper. The helper has PIE, full RELRO and a non-executable stack. Installation tests used an isolated synthetic system tree.
+The counts and CI links above identify the release-candidate implementation baseline, completed on 2026-09-07. They are not a claim that an older CI run built the final `0.3.0` tag. See [CI](https://github.com/hayatboj/msi-gpu-mux-switch/actions/workflows/ci.yml) for the exact commit's remote Linux/Windows results. Demo tests never invoked the privileged helper. The helper has PIE, full RELRO and a non-executable stack. Installation tests used an isolated synthetic system tree.
 
-Release packaging reruns on the release tag. Check its [release build](https://github.com/hayatboj/msi-gpu-mux-switch/actions/workflows/release.yml) and downloaded `SHA256SUMS` when installing; the results above identify the tested implementation, not arbitrary future commits. GitHub Linux archives build on Ubuntu 24.04 with system Qt 6 and do not bundle Qt.
+The release workflow runs only on `v*` tag pushes or manual `workflow_dispatch`, not branch pushes or pull requests. Publication requires a `v*` tag reference and successful Linux and Windows validation/build jobs; the tag must match the Cargo package version. Check the exact tag's [release build](https://github.com/hayatboj/msi-gpu-mux-switch/actions/workflows/release.yml) and downloaded `SHA256SUMS` when installing. GitHub Linux archives build on Ubuntu 24.04 with system Qt 6 and do not bundle Qt.
+
+## Stable 0.3.0 software checks
+
+Final local checks for the stable desktop and packaging changes passed on 2026-09-07:
+
+- **44 Qt test results**, including initialization/cleanup, covering the desktop's default mode gates, explicit experimental opt-in, and existing status/process behavior.
+- **17 installer/removal tests**, using an isolated synthetic system tree.
+
+The historical release-candidate counts above remain unchanged. The stable release's own Linux and Windows workflow jobs gate publication; historical CI runs do not substitute for those checks.
 
 ## Live Linux hardware observation
 
-A complete **MSHybrid → Discrete → MSHybrid** round trip was observed successfully on the reference laptop on **2026-09-07**. Both directions used the same installed application, **0.3.0-rc.1**, commit [`fda56b8905e988a73d3555b734ada4a38179f64a`](https://github.com/hayatboj/msi-gpu-mux-switch/commit/fda56b8905e988a73d3555b734ada4a38179f64a), with model **Vector 16 HX AI A2XWIG**, board **MS-15M3**, and BIOS **E15M3IMS.116**. No application code changed between the two tests.
+Three transitions in the **MSHybrid → Discrete → MSHybrid → Discrete** sequence succeeded on the reference laptop on **2026-09-07**. All three used the same installed application, **0.3.0-rc.1**, commit [`fda56b8905e988a73d3555b734ada4a38179f64a`](https://github.com/hayatboj/msi-gpu-mux-switch/commit/fda56b8905e988a73d3555b734ada4a38179f64a), with model **Vector 16 HX AI A2XWIG**, board **MS-15M3**, and BIOS **E15M3IMS.116**. The firmware protocol and transaction source in stable **0.3.0** is unchanged from that hardware-tested build. Stable-release changes concern versioning, desktop mode availability, tray handling, and documentation.
 
-1. Privileged diagnostics on the preceding boot succeeded and showed apply-ready clear.
-2. The user explicitly approved the live Hybrid to Discrete test.
-3. The Discrete request completed successfully, including the firmware acknowledgement.
-4. The user performed a manual full shutdown and power-on.
-5. Post-boot read-only status from the installed backend, captured at **2026-09-07T15:19:10+03:00**, reported both current mode and selected target as `discrete`, with `pending_shutdown=false` and `switching_supported=true`.
-6. The active internal connector **`card1-eDP-1`** was driven by **NVIDIA**, using the `nvidia` driver at **PCI `0000:01:00.0`**. PCI display enumeration showed only NVIDIA. KDE retained the native **2560×1600 at 240 Hz** display mode. This confirms the physical internal display route after the power cycle, beyond merely selecting a target mode.
-7. The user explicitly approved the reverse transition. After requesting Hybrid, another manual full shutdown and power-on was performed.
-8. Post-boot read-only status, captured at **2026-09-07T15:30:03+03:00**, reported both current mode and selected target as `ms-hybrid`, with `pending_shutdown=false` and `switching_supported=true`.
-9. The active internal connector **`card2-eDP-1`** was driven by **Intel**, using the `i915` driver at **PCI `0000:00:02.0`**. NVIDIA remained present, with its **`card1-eDP-2`** connector disconnected. KDE again reported **2560×1600 at 240 Hz**. This confirms the physical return of the internal display to Intel in Hybrid mode.
+The user explicitly approved each transition and performed a manual full shutdown and power-on after it. Privileged diagnostics before the initial transition succeeded with apply-ready clear; the initial request completed its firmware acknowledgement. Read-only post-boot status provided the following observations:
 
-This record summarizes the observations without publishing raw firmware or diagnostic captures. **Integrated mode and live failure recovery remain unvalidated.** This successful round trip does not establish compatibility with other BIOS versions or laptops, or guarantee recovery from a failed operation.
+| Transition | Post-boot capture (UTC+03:00) | Current / selected target | Active internal display route |
+|---|---|---|---|
+| Hybrid → Discrete | 2026-09-07 15:19:10 | `discrete` / `discrete` | `card1-eDP-1`, NVIDIA, `nvidia`, PCI `0000:01:00.0` |
+| Discrete → Hybrid | 2026-09-07 15:30:03 | `ms-hybrid` / `ms-hybrid` | `card2-eDP-1`, Intel, `i915`, PCI `0000:00:02.0` |
+| Hybrid → Discrete | 2026-09-07 15:36:52 | `discrete` / `discrete` | `card1-eDP-1`, NVIDIA, `nvidia`, PCI `0000:01:00.0` |
 
-## Hardware release gate
+All three post-boot observations reported **`pending_shutdown=false`** and **`switching_supported=true`**. KDE retained the native **2560×1600 at 240 Hz** display mode after every transition. After the first Discrete transition, PCI display enumeration showed only NVIDIA. On return to Hybrid, NVIDIA remained present with its `card1-eDP-2` connector disconnected while Intel drove the internal panel. The final observation confirmed a second physical switch of the panel to NVIDIA. These routing observations verify more than a requested target value.
+
+This record summarizes observations without publishing raw firmware or diagnostic captures. It verifies both default directions and a repeated Hybrid-to-Discrete transition on this configuration. It does not establish compatibility with another BIOS or laptop.
+
+## Hardware release gate for stable Hybrid/Discrete support
 
 - [x] Privileged diagnostics succeed with apply-ready clear.
-- [x] User explicitly approves the live Hybrid to Discrete and return-to-Hybrid tests.
-- [x] Hybrid to Discrete request succeeds on the reference laptop, including acknowledgement.
-- [x] Complete manual shutdown and power-on performed.
-- [x] Firmware reports Discrete and active internal eDP is NVIDIA-driven.
-- [x] Return to Hybrid verified after another full shutdown/power-on, with active internal eDP driven by Intel.
-- [ ] Integrated mode separately validated; it remains unvalidated.
-- [x] Tested application commit and BIOS/EC versions recorded.
+- [x] User explicitly approves each live transition.
+- [x] Hybrid to Discrete succeeds on the reference laptop, including acknowledgement.
+- [x] Complete manual shutdown and power-on performed after each transition.
+- [x] Firmware reports Discrete and the active internal eDP route is NVIDIA-driven.
+- [x] Return to Hybrid is verified with the active internal eDP route driven by Intel.
+- [x] A second Hybrid to Discrete transition is verified after another full power cycle.
+- [x] Native 2560×1600 at 240 Hz is retained in all three observations.
+- [x] Tested application commit and BIOS/EC versions are recorded.
+- [x] Stable release preserves the tested firmware protocol and transaction engine.
 
-The release remains a prerelease with the tested directions and outstanding validation limits stated explicitly. Never intentionally cause a real firmware failure to test recovery.
+This completes the hardware gate for the default Hybrid/Discrete workflow in **0.3.0** on the exact reference configuration.
+
+## Outside the validated stable scope
+
+- **Integrated mode:** physical switching has not been validated. The desktop disables it by default and requires explicit experimental-mode opt-in. The CLI retains this advanced mode, its mode-specific human confirmation, and all existing backend safety checks.
+- **Actual firmware failure recovery:** no live failure was deliberately induced. Synthetic fault-injection tests validate software failure handling and uncertain-state reporting; they do not establish a universal hardware recovery method.
+- **Other hardware or firmware:** the stable result does not extend to another model, board, BIOS, or uncharacterized ACPI transport.
+
+Integrated validation is not a prerequisite for the stable Hybrid/Discrete release because it is outside the default supported workflow. Never intentionally cause a real firmware failure as a release gate. Recovery limits remain documented in [RECOVERY.md](RECOVERY.md).

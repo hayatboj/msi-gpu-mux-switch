@@ -21,7 +21,7 @@ Run GUI tests with the offscreen Qt platform and use demo mode for screenshots. 
 
 ## Interface
 
-Add English and Turkish text together. Preserve keyboard navigation and readability in native themes. Current mode, requested mode, and observed internal display routing are distinct facts. Do not label a requested transition as physically complete before post-boot observation. Never automatically reboot a user.
+Add English and Turkish text together. Preserve keyboard navigation and readability in native themes. Current mode, requested mode, and observed internal display routing are distinct facts. Do not label a requested transition as physically complete before post-boot observation. Never automatically reboot a user. Integrated mode stays disabled by default behind an explicit desktop experimental-mode preference; enabling that preference must not weaken backend checks.
 
 ## Hardware support
 
@@ -31,4 +31,6 @@ Hardware tests require a deliberate plan and out-of-band recovery instructions. 
 
 ## Releases
 
-Use prerelease tags until `docs/VALIDATION.md` records the hardware gate as complete. Artifacts need checksums and installation/removal instructions. Never publish local diagnostic captures or inspected proprietary firmware binaries.
+Version `0.3.0` is stable for Hybrid/Discrete switching on the exact model, board, and BIOS documented in `docs/VALIDATION.md`. Integrated remains outside that validated scope and requires explicit desktop opt-in. New hardware or protocol changes require their own evidence before expanding stable support.
+
+Failure handling is exercised through synthetic fault injection; intentionally failing real firmware is neither required nor appropriate for a stable release. Document recovery limits without promising universal recovery. Artifacts need checksums and installation/removal instructions. Never publish local diagnostic captures or inspected proprietary firmware binaries.

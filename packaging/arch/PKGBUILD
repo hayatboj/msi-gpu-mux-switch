@@ -1,9 +1,9 @@
 # Maintainer: MSI MUX community contributors
 pkgname=msi-mux
-pkgver=0.3.0rc1
-_tag=v0.3.0-rc.1
+pkgver=0.3.0
+_tag=v0.3.0
 pkgrel=1
-pkgdesc='MSI GPU MUX CLI and Qt 6 tray (release candidate, limited characterized hardware)'
+pkgdesc='MSI GPU MUX CLI and Qt 6 tray for validated Vector 16 HX AI hardware'
 arch=('x86_64')
 url='https://github.com/hayatboj/msi-gpu-mux-switch'
 license=('MIT')

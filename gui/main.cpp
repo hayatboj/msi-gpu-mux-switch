@@ -37,7 +37,7 @@ int main(int argc, char *argv[]) {
     }
     Application app(argc, argv);
     QCoreApplication::setApplicationName(QStringLiteral("MSI MUX"));
-    QCoreApplication::setApplicationVersion(QStringLiteral("0.3.0-rc.1"));
+    QCoreApplication::setApplicationVersion(QStringLiteral("0.3.0"));
     QCoreApplication::setOrganizationName(QStringLiteral("hayatboj"));
     QGuiApplication::setDesktopFileName(QStringLiteral("org.hayatboj.msimux"));
     QApplication::setQuitOnLastWindowClosed(false);

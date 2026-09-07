@@ -76,6 +76,8 @@ Window::Window(bool demo, Language language, bool trayEnabled, QWidget *parent)
     : QMainWindow(parent), m_backend(demo, this), m_language(language), m_settings(), m_tray(this), m_trayEnabled(trayEnabled) {
     setWindowTitle(QStringLiteral("MSI MUX"));
     setWindowIcon(QIcon(QStringLiteral(":/icons/msi-mux.svg")));
+    m_backend.setExperimentalIntegratedEnabled(!demo &&
+        m_settings.value(QStringLiteral("experimentalIntegratedEnabled"), false).toBool());
     setMinimumSize(590, 640);
     const int availableHeight = QGuiApplication::primaryScreen() ? QGuiApplication::primaryScreen()->availableGeometry().height() : 980;
     resize(680, qBound(640, availableHeight - 80, 900));
@@ -360,6 +362,10 @@ void Window::buildMenus() {
     m_autostartAction->setChecked(QFileInfo::exists(autostartPath()));
     m_autostartAction->setEnabled(!m_backend.demo());
     connect(m_autostartAction, &QAction::triggered, this, &Window::setAutostart);
+    m_experimentalIntegratedAction = m_preferencesMenu->addAction(QString());
+    m_experimentalIntegratedAction->setCheckable(true);
+    m_experimentalIntegratedAction->setChecked(m_backend.experimentalIntegratedEnabled());
+    connect(m_experimentalIntegratedAction, &QAction::triggered, this, &Window::setExperimentalIntegrated);
     m_preferencesMenu->addSeparator();
     m_quitAction = m_preferencesMenu->addAction(QString(), this, &Window::requestQuit);
     m_preferencesButton->setMenu(m_preferencesMenu);
@@ -370,7 +376,9 @@ void Window::buildMenus() {
         if (reason == QSystemTrayIcon::Trigger || reason == QSystemTrayIcon::DoubleClick) showPanel();
     });
     connect(&m_tray, &QSystemTrayIcon::messageClicked, this, &Window::showPanel);
-    if (m_trayEnabled && QSystemTrayIcon::isSystemTrayAvailable()) m_tray.show();
+    // Qt automatically registers a visible icon when a tray starts later.
+    // Keep startup and close-window fallback based on actual availability.
+    if (m_trayEnabled) m_tray.show();
 }
 
 QString Window::panelLabel() const {
@@ -419,16 +427,18 @@ void Window::updateUi() {
     for (size_t index = 0; index < modes.size(); ++index) {
         const auto mode = modes[index];
         const bool active = status.current == mode;
-        const bool enabled = status.canSwitch(mode, busy) && !refreshing;
-        m_modeNames[index]->setText(modeName(mode, m_language));
-        m_modeDescriptions[index]->setText(t(descriptions[index]));
+        const bool enabled = m_backend.canApplyMode(mode);
+        const auto name = mode == Mode::Integrated ? t(Text::IntegratedExperimental) : modeName(mode, m_language);
+        m_modeNames[index]->setText(name);
+        m_modeDescriptions[index]->setText(t(mode == Mode::Integrated && !m_backend.experimentalIntegratedEnabled() ?
+            Text::IntegratedOptInRequired : descriptions[index]));
         m_modeButtons[index]->setText(t(active ? Text::Active : Text::Select));
         m_modeButtons[index]->setEnabled(enabled);
         m_modeButtons[index]->setAccessibleName(t(Text::ApplyTitle).arg(modeName(mode, m_language)));
         m_modeCards[index]->setProperty("active", active);
         m_modeCards[index]->style()->unpolish(m_modeCards[index]);
         m_modeCards[index]->style()->polish(m_modeCards[index]);
-        m_modeActions[index]->setText(modeName(mode, m_language));
+        m_modeActions[index]->setText(name);
         m_modeActions[index]->setChecked(active);
         m_modeActions[index]->setEnabled(enabled);
     }
@@ -440,7 +450,7 @@ void Window::updateUi() {
     m_compatibilityLabel->setText(t(status.expectedHardware && status.bios == QLatin1String("E15M3IMS.116") ? Text::Compatible : Text::Unsupported));
     m_experimentalTitle->setText(t(Text::Experimental));
     m_experimentalDetail->setText(t(Text::ExperimentalDetail));
-    m_version->setText(t(Text::Version).arg(QStringLiteral("0.3.0-rc.1")));
+    m_version->setText(t(Text::Version).arg(QStringLiteral("0.3.0")));
     m_refreshButton->setText(t(refreshing ? Text::Refreshing : Text::Refresh));
     m_refreshButton->setEnabled(!busy && !refreshing);
     m_preferencesButton->setToolTip(t(Text::Settings));
@@ -454,6 +464,9 @@ void Window::updateUi() {
     m_refreshAction->setEnabled(!busy && !refreshing);
     m_languageMenu->setTitle(t(Text::LanguageMenu));
     m_autostartAction->setText(t(Text::Autostart));
+    m_experimentalIntegratedAction->setText(t(Text::EnableExperimentalIntegrated));
+    m_experimentalIntegratedAction->setChecked(m_backend.experimentalIntegratedEnabled());
+    m_experimentalIntegratedAction->setEnabled(!busy);
     m_quitAction->setText(t(Text::Quit));
     m_quitAction->setEnabled(!busy);
     m_shutdownAction->setText(t(Text::Shutdown));
@@ -469,7 +482,7 @@ void Window::updateUi() {
 }
 
 void Window::applyMode(Mode mode) {
-    if (!m_backend.status().canSwitch(mode, m_backend.busy()) || m_backend.refreshing()) return;
+    if (!m_backend.canApplyMode(mode)) return;
     showPanel();
     QDialog dialog(this);
     dialog.setWindowTitle(t(Text::ApplyTitle).arg(modeName(mode, m_language)));
@@ -481,7 +494,8 @@ void Window::applyMode(Mode mode) {
     description->setText(t(Text::ApplyDescription).arg(modeName(mode, m_language)));
     layout->addWidget(description);
     auto *risk = label(&dialog, QStringLiteral("muted"), true);
-    risk->setText(m_backend.demo() ? t(Text::Demo) : t(Text::ApplyRisk));
+    risk->setText(m_backend.demo() ? t(Text::Demo) :
+        (mode == Mode::Integrated ? t(Text::IntegratedRisk) + QLatin1Char('\n') : QString()) + t(Text::ApplyRisk));
     layout->addWidget(risk);
     auto *tokenLabel = label(&dialog);
     tokenLabel->setText(t(Text::TypeToken).arg(modeToken(mode)));
@@ -575,6 +589,13 @@ void Window::setAutostart(bool enabled) {
     if (!success) showDetails(t(Text::Error), t(Text::AutostartFailed), {});
 }
 
+void Window::setExperimentalIntegrated(bool enabled) {
+    if (m_backend.busy()) return;
+    m_backend.setExperimentalIntegratedEnabled(enabled);
+    if (!m_backend.demo()) m_settings.setValue(QStringLiteral("experimentalIntegratedEnabled"), enabled);
+    updateUi();
+}
+
 void Window::showPanel() {
     showNormal();
     raise();
@@ -589,7 +610,7 @@ void Window::requestQuit() {
 
 void Window::closeEvent(QCloseEvent *event) {
     if (m_backend.busy()) { event->ignore(); return; }
-    if (m_tray.isVisible() && !m_quitting) {
+    if (hasTray() && !m_quitting) {
         hide();
         event->ignore();
     } else {

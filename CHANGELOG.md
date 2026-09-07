@@ -7,19 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-07
+
+### Added
+
+- Stable Linux desktop support for Hybrid and Discrete switching on the exact
+  MSI Vector 16 HX AI A2XWIG / MS-15M3 / E15M3IMS.116 configuration.
+- Recorded three successful live transitions using installed `0.3.0-rc.1`,
+  commit `fda56b8905e988a73d3555b734ada4a38179f64a`: Hybrid to Discrete
+  verified at 15:19:10, Discrete to Hybrid at 15:30:03, and Hybrid to Discrete
+  again at 15:36:52 on 2026-09-07 (UTC+03:00). Every transition followed a
+  manual full shutdown/power-on. Current/target firmware modes and the active
+  internal panel route agreed, preserving 2560×1600 at 240 Hz.
+
 ### Changed
 
-- Documented a successful live Linux MSHybrid to Discrete and back to MSHybrid round trip on the
-  MSI Vector 16 HX AI A2XWIG / MS-15M3 / E15M3IMS.116, using installed
-  `0.3.0-rc.1` at commit `fda56b8905e988a73d3555b734ada4a38179f64a`.
-  Privileged preflight showed apply-ready clear; the user approved the test,
-  the request was acknowledged, and the internal eDP panel was verified as
-  NVIDIA-driven after a manual full shutdown and power-on on 2026-09-07.
-  The user-approved reverse test then verified Hybrid firmware state and an
-  Intel-driven internal eDP panel after another manual full shutdown and power-on.
-  Both directions retained 2560×1600 at 240 Hz, using the same installed version.
-  Integrated mode and live failure recovery remain unvalidated;
-  the release remains a release candidate.
+- Integrated mode is experimental and disabled by default in the desktop;
+  users must explicitly enable experimental modes in settings. CLI Integrated
+  support and the backend's original confirmation and safety gates remain intact.
+- Stable release scope distinguishes validated default Hybrid/Discrete operation
+  from unvalidated Integrated operation and unproven hardware recovery.
+- Firmware protocol and transaction engine are unchanged from the hardware-tested
+  release candidate; failure handling remains covered by synthetic tests.
+
+### Fixed
+
+- Tray icon registration follows KDE system tray availability, including a tray
+  that becomes available after application startup.
 
 ## [0.3.0-rc.1] - 2026-09-07
 
@@ -76,7 +90,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Embedded Windows manifest requesting Administrator privileges.
 - Windows CI, release archives, SHA-256 checksums, and tagged GitHub Releases.
 
-[Unreleased]: https://github.com/hayatboj/msi-gpu-mux-switch/compare/v0.3.0-rc.1...linux-kde
+[Unreleased]: https://github.com/hayatboj/msi-gpu-mux-switch/compare/v0.3.0...linux-kde
+[0.3.0]: https://github.com/hayatboj/msi-gpu-mux-switch/releases/tag/v0.3.0
 [0.3.0-rc.1]: https://github.com/hayatboj/msi-gpu-mux-switch/releases/tag/v0.3.0-rc.1
 [0.2.0]: https://github.com/steelbrain/msi-gpu-mux-switch/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/steelbrain/msi-gpu-mux-switch/releases/tag/v0.1.0

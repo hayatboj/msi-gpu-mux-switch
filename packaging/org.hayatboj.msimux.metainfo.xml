@@ -8,8 +8,10 @@
   <summary xml:lang="tr">Desteklenen MSI GPU MUX modlarını inceleyin ve değiştirin</summary>
   <description>
     <p>A community Qt 6 tray application for the characterized MSI Vector 16 HX AI A2XWIG, MS-15M3, BIOS E15M3IMS.116. Hardware and firmware checks remain enforced by a privileged backend.</p>
-    <p>This Linux release candidate awaits a real firmware transition test. A successful staging operation requires saving work and performing a full shutdown manually.</p>
-    <p xml:lang="tr">MSI Vector 16 HX AI A2XWIG, MS-15M3 ve E15M3IMS.116 BIOS için topluluk tarafından geliştirilen Qt 6 sistem tepsisi uygulaması. Bu Linux sürüm adayında gerçek ürün yazılımı geçiş testi henüz tamamlanmamıştır.</p>
+    <p>Hybrid and Discrete transitions have been physically verified on this exact model, board and BIOS, including the active internal display connection after a manual full shutdown and power-on. Save your work and perform a full shutdown manually after a successful request.</p>
+    <p>Integrated mode remains unvalidated and experimental, and is disabled by default in the tray. Failure recovery has not been physically tested.</p>
+    <p xml:lang="tr">MSI Vector 16 HX AI A2XWIG, MS-15M3 ve E15M3IMS.116 BIOS için topluluk tarafından geliştirilen Qt 6 sistem tepsisi uygulaması. Hybrid ve Discrete arasındaki geçişler, elle tam kapatıp açma sonrasında dahili ekran bağlantısı kontrol edilerek bu donanımda doğrulanmıştır. Başarılı bir isteğin ardından çalışmalarınızı kaydedip bilgisayarı elle tamamen kapatın.</p>
+    <p xml:lang="tr">Integrated modu doğrulanmamıştır, deneyseldir ve sistem tepsisi uygulamasında varsayılan olarak devre dışıdır. Hata sonrası kurtarma fiziksel olarak test edilmemiştir.</p>
   </description>
   <launchable type="desktop-id">org.hayatboj.msimux.desktop</launchable>
   <url type="homepage">https://github.com/hayatboj/msi-gpu-mux-switch</url>
@@ -17,4 +19,12 @@
   <provides><binary>msi-mux-tray</binary><binary>msi-mux-switch</binary></provides>
   <content_rating type="oars-1.1"/>
   <developer id="io.github.hayatboj"><name>MSI MUX community contributors</name></developer>
+  <releases>
+    <release version="0.3.0" date="2026-09-07" type="stable">
+      <description>
+        <p>Hybrid and Discrete transitions verified on Vector 16 HX AI A2XWIG, MS-15M3, BIOS E15M3IMS.116. Integrated mode requires experimental opt-in.</p>
+        <p xml:lang="tr">Hybrid ve Discrete geçişleri Vector 16 HX AI A2XWIG, MS-15M3, E15M3IMS.116 BIOS üzerinde doğrulandı. Integrated modu için deneysel seçeneğin açılması gerekir.</p>
+      </description>
+    </release>
+  </releases>
 </component>

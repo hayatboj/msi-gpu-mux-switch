@@ -4,9 +4,7 @@
 
 Desteklenen MSI dizüstünde fiziksel GPU MUX modunu KDE sistem tepsisinden yöneten, Qt 6 ile geliştirilmiş masaüstü uygulaması. Geçerli modu görün, simgeye sağ tıklayarak başka bir mod seçin ve uygulamayı kapatmadan Türkçe/İngilizce arasında geçin.
 
-![Türkçe KDE arayüzü; sentetik demo verisi kullanılmıştır](docs/images/kde-tr.png)
-
-**Donanım doğrulama durumu:** Aşağıdaki yapılandırmada, kurulu **0.3.0-rc.1** sürümüyle Linux üzerinde gerçek **Hibrit → Ayrık → Hibrit** gidiş-dönüş testi 7 Eylül 2026’da başarılı oldu. Her geçişten sonra kullanıcı bilgisayarı elle tamamen kapatıp yeniden açtı; firmware modu ve aktif dahili eDP bağlantısı uyuştu: Ayrık modda NVIDIA, Hibrit’e dönüşte Intel. Ekranın doğal **2560×1600, 240 Hz** modu korundu. Bu sonuç yalnız bu yapılandırmada iki yönü doğrular; Entegre mod ve hata sonrası kurtarma henüz doğrulanmadı. Yazılım **sürüm adayı** olarak kalıyor. [Test adımları ve kullanılan uygulama commit’i](docs/VALIDATION.md#live-linux-hardware-observation) doğrulama kaydında bulunuyor.
+**0.3.0 sürümü, aşağıdaki tam yapılandırmada Hibrit ve Ayrık geçişleri için kararlı sürümdür.** Linux üzerinde gerçek **Hibrit → Ayrık → Hibrit → Ayrık** dizisindeki üç geçiş 7 Eylül 2026’da başarılı oldu. Kullanıcı her geçişten sonra bilgisayarı elle tamamen kapatıp yeniden açtı; firmware modu ile aktif dahili eDP bağlantısı uyuştu ve **2560×1600, 240 Hz** korundu. Firmware protokolünü uygulayan kod, bu testlerde kullanılan kurulu **0.3.0-rc.1** sürümüyle aynıdır. **Entegre mod deneysel kalır ve masaüstünde varsayılan olarak kapalıdır; ayarlardan ayrıca etkinleştirilmesi gerekir.** [Test adımları, zamanları ve kullanılan commit](docs/VALIDATION.md#live-linux-hardware-observation) doğrulama kaydında bulunuyor.
 
 | Desteklenen yapılandırma | Değer |
 |---|---|
@@ -16,17 +14,19 @@ Desteklenen MSI dizüstünde fiziksel GPU MUX modunu KDE sistem tepsisinden yön
 | Sistem | Linux x86-64, UEFI |
 | Masaüstü | KDE Plasma sistem tepsisi |
 
+![Türkçe KDE arayüzü; sentetik demo verisi kullanılmıştır](docs/images/kde-tr.png)
+
 ## Kullanım
 
 Uygulama menüsünden **MSI MUX**’u açın. Sağ alttaki simgeye sağ tıklayarak geçerli modu ve kullanılabilir seçenekleri görün:
 
-- **Hibrit:** Intel ve NVIDIA birlikte kullanılabilir.
-- **Ayrık:** Ayrık ekran kartını seçer; bu cihazda NVIDIA.
-- **Entegre:** İşlemcinin dahili grafik birimini seçer; bu cihazda Intel.
+- **Hibrit:** Intel ve NVIDIA birlikte kullanılabilir; bu cihazda geçişi doğrulandı.
+- **Ayrık:** Bu cihazda NVIDIA’yı ve dahili ekranın doğrudan NVIDIA bağlantısını seçer; geçişi doğrulandı.
+- **Entegre — deneysel:** Intel grafik birimini seçer. Fiziksel geçişi doğrulanmadı; yalnız ayarlardan deneysel modlar ayrıca açıldığında kullanılabilir.
 
 Sol tıklamak durum penceresini açar. Geçerli mod, hedef mod ve dahili ekranı süren GPU ayrı gösterilir. Hedefin seçilmiş olması, ekran bağlantısının henüz değiştiği anlamına gelmez.
 
-Dil menüsünden **Türkçe** veya **English** seçilebilir. Oturum açıldığında başlatma isteğe bağlıdır.
+Dil menüsünden **Türkçe** veya **English** seçilebilir. Oturum açıldığında başlatma isteğe bağlıdır. Uygulama, KDE tepsisinin sonradan hazır olması dahil tepsi kullanılabilirliğini takip eder. Deneysel modları açmak cihaz, BIOS, adaptör veya firmware kontrollerini kaldırmaz.
 
 Mod değiştirmek için adaptör bağlı olmalı; cihaz/BIOS eşleşmeli ve önceki işlem çözümlenmemiş durumda kalmamalı. Hedef onaylandıktan sonra KDE yönetici yetkisi ister. Arayüz yönetici olarak çalışmaz.
 
@@ -49,8 +49,10 @@ Kaynak derlemesi için Rust 1.88+, CMake, C++20 derleyicisi, Python 3 ve Qt 6 ge
 
 ```sh
 ./scripts/build-linux.sh
-./scripts/package-linux.sh 0.3.0-rc.1
+./scripts/package-linux.sh 0.3.0
 ```
+
+Yayın paketleri yalnız `v*` etiketi gönderildiğinde veya yayın iş akışı elle başlatıldığında derlenir. Yayımlanması için sürüm etiketi eşleşmeli ve Linux ile Windows doğrulama/derleme işleri başarıyla tamamlanmalıdır.
 
 ## Tanılama
 
@@ -68,9 +70,11 @@ msi-mux-switch --debug --json
 
 Uygulama sıradan durum kontrollerinde `nvidia-smi` çalıştırmaz. Değişiklik gerektiğinde yalnız sınırlı işlemleri kabul eden Polkit yardımcısını çağırır.
 
+Komut satırı Entegre modunu bilinçli ileri kullanım için korur. Etkileşimli geçişte moda özel onay metnini aynen yazmak gerekir. Betikler için `--json` yalnız bu yazılı onayı atlar; diğer güvenlik kontrollerini kaldırmaz ve cihaz/BIOS denetimini aşan bir seçenek sunmaz.
+
 ## Sınırlar
 
-Fiziksel MUX geçişi kalıcı UEFI durumunu değiştirir. Firmware çağrısından sonraki hata, sonucu belirsiz bırakabilir. Önceki hedefin geri yazılması bütün donanım durumunun geri alındığı anlamına gelmez. BIOS varsayılanlarının veya EC resetinin her durumu kurtardığı doğrulanmamıştır. İlk denemeden önce [kurtarma notlarını](docs/RECOVERY.md) okuyun.
+Fiziksel MUX geçişi kalıcı UEFI durumunu değiştirir. Firmware çağrısından sonraki hata, sonucu belirsiz bırakabilir. Önceki hedefin geri yazılması bütün donanım durumunun geri alındığı anlamına gelmez. BIOS varsayılanlarının veya EC resetinin her durumu kurtardığı doğrulanmamıştır. Hibrit/Ayrık testleri yalnız belirtilen yapılandırmanın normal geçişlerini doğrular; her hatanın kurtarılabileceğini göstermez. Hata yolları, gerçek firmware’i bilerek bozmak yerine sentetik testlerle sınanır. İlk kullanımdan önce [kurtarma notlarını](docs/RECOVERY.md) okuyun.
 
 Bu uygulama `prime-run` gibi yalnız uygulamanın çizim GPU’sunu seçmez. Desteklenmeyen BIOS ve cihazlarda arayüz geçişi açmaz.
 
