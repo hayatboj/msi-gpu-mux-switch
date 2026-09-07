@@ -1,65 +1,42 @@
-use std::fs;
-use std::io::{self, Write};
-use std::thread;
-use std::time::{Duration, Instant};
-
-use anyhow::Context;
-use anyhow::{Result, bail};
-use chrono::Local;
+use anyhow::{Context, Result, bail};
 use clap::{Parser, error::ErrorKind};
+use msi_gpu_mux::platform::NativePlatform;
+use msi_gpu_mux::transaction::{self, DiskJournal};
 use msi_gpu_mux::{
-    EXPECTED_BIOS, EXPECTED_VARIABLE_ATTRIBUTES, EXPECTED_VARIABLE_LENGTH, FirmwareInfo,
-    FirmwareVariable, MsiAcpi, ac_power_online, backup_directory, is_elevated,
-    privilege_requirement, query_machine, read_msi_variable, recovery_key_warning, sha256_hex,
-    shutdown_command, stage_target, trigger_value, verification_command, wait_for_keypress,
-    write_msi_variable,
+    FirmwareInfo, is_elevated, privilege_requirement, query_machine, read_msi_variable,
+    recovery_key_warning, shutdown_command, verification_command, wait_for_keypress,
 };
-use msi_gpu_mux::{Mode, StateSnapshot, collect_snapshot};
-use serde::Serialize;
-use serde_json::Value;
-use serde_json::json;
+use msi_gpu_mux::{Mode, StateSnapshot, collect_snapshot, collect_status};
+use serde_json::{Value, json};
+use std::io::{self, Write};
 
 /// Inspect or change the GPU MUX mode on the characterized MSI MS-15M3.
 #[derive(Debug, Parser)]
 #[command(version, about)]
 struct Args {
     /// Target mode. If omitted, an interactive menu is shown.
-    #[arg(value_name = "MODE", conflicts_with = "debug")]
+    #[arg(value_name = "MODE", conflicts_with_all = ["debug", "status"])]
     mode: Option<Mode>,
 
     /// Collect read-only machine and MUX diagnostics, then exit.
     #[arg(long)]
     debug: bool,
 
+    /// Read status without invoking any ACPI method (safe for desktop polling).
+    #[arg(long, conflicts_with = "debug")]
+    status: bool,
+
     /// Emit JSON and skip typed confirmation. Progress is emitted as JSONL events.
     #[arg(long)]
     json: bool,
 
-    /// Deliberately bypass the exact model/board gate.
+    /// Permit unsupported hardware only for explicit --debug diagnostics.
     #[arg(long)]
     allow_unsupported_hardware: bool,
 
-    /// Deliberately permit a BIOS other than the characterized version.
+    /// Legacy override, rejected for switching in this safety-hardened build.
     #[arg(long)]
     allow_unvalidated_bios: bool,
-}
-
-#[derive(Debug, Serialize)]
-struct BackupRecord {
-    created_at: String,
-    model: String,
-    board: String,
-    bios: String,
-    requested_target: u8,
-    requested_target_name: Mode,
-    previous_target: u8,
-    previous_target_name: Mode,
-    previous_current: u8,
-    byte5_before: String,
-    byte5_staged: String,
-    variable_length: usize,
-    attributes: String,
-    variable_sha256: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,16 +53,17 @@ impl Reporter {
     fn event(&self, event: &str, message: impl AsRef<str>, data: Value) -> Result<()> {
         let message = message.as_ref();
         if self.json {
-            println!(
+            writeln!(
+                io::stdout().lock(),
                 "{}",
                 serde_json::to_string(&json!({
                     "event": event,
                     "message": message,
                     "data": data,
                 }))?
-            );
+            )?;
         } else {
-            println!("{message}");
+            writeln!(io::stdout().lock(), "{message}")?;
         }
         Ok(())
     }
@@ -210,7 +188,7 @@ fn choose_mode(available: &[Mode], reporter: &Reporter) -> Result<Option<Mode>> 
 }
 
 fn print_debug_text(snapshot: &StateSnapshot) {
-    println!("MSI GPU MUX debug state");
+    println!("MSI GPU MUX state");
     println!("Captured: {}", snapshot.captured_at);
     println!("Elevated: {}", snapshot.elevated);
     println!(
@@ -222,6 +200,23 @@ fn print_debug_text(snapshot: &StateSnapshot) {
         snapshot.machine.bios
     );
     println!("Expected hardware: {}", snapshot.machine.expected_hardware);
+    println!("AC power online: {}", snapshot.ac_power_online);
+    println!("Switching supported: {}", snapshot.switching_supported);
+    if let Some(reason) = &snapshot.switching_block_reason {
+        println!("Switching blocked: {reason}");
+    }
+    println!("Manual shutdown pending: {}", snapshot.pending_shutdown);
+    println!("Internal display routing:");
+    for display in &snapshot.internal_displays {
+        println!(
+            "  {}: {} / enabled={}, {} (driver {})",
+            display.connector,
+            display.status,
+            display.enabled,
+            display.vendor,
+            display.driver.as_deref().unwrap_or("unknown")
+        );
+    }
 
     match (&snapshot.secure_boot.value, &snapshot.secure_boot.error) {
         (Some(enabled), _) => println!("Secure Boot: {enabled}"),
@@ -295,26 +290,13 @@ fn print_debug_text(snapshot: &StateSnapshot) {
     }
 }
 
-fn restore_previous_target(previous: Mode) -> Result<()> {
-    let current = read_msi_variable()?;
-    if current.bytes.len() != EXPECTED_VARIABLE_LENGTH {
-        bail!("cannot restore target: MsiDCVarData length changed unexpectedly");
-    }
-    let restored = FirmwareVariable {
-        bytes: stage_target(&current.bytes, previous)?,
-        attributes: current.attributes,
-    };
-    write_msi_variable(&restored)?;
-    let verified = read_msi_variable()?;
-    if verified.bytes != restored.bytes || verified.attributes != restored.attributes {
-        bail!("previous target restoration could not be verified");
-    }
-    Ok(())
-}
-
 fn run(args: Args, reporter: &Reporter) -> Result<RunOutcome> {
-    if args.debug {
-        let snapshot = collect_snapshot(args.allow_unsupported_hardware)?;
+    if args.debug || args.status {
+        let snapshot = if args.status {
+            collect_status()?
+        } else {
+            collect_snapshot(args.allow_unsupported_hardware)?
+        };
         if args.json {
             println!("{}", serde_json::to_string_pretty(&snapshot)?);
         } else {
@@ -323,22 +305,17 @@ fn run(args: Args, reporter: &Reporter) -> Result<RunOutcome> {
         return Ok(RunOutcome::Finished);
     }
 
-    let machine = query_machine()?;
-    if !machine.expected_hardware && !args.allow_unsupported_hardware {
+    if args.json && args.mode.is_none() {
         bail!(
-            "unsupported hardware: model '{}', board '{}'; use the explicit override only after reviewing the firmware layout",
-            machine.model,
-            machine.board
+            "JSON mode requires a target MODE, --status, or --debug; interactive input is disabled"
         );
     }
-    if machine.bios != EXPECTED_BIOS && !args.allow_unvalidated_bios {
+    if args.allow_unsupported_hardware || args.allow_unvalidated_bios {
         bail!(
-            "BIOS '{}' is not the characterized '{}'; use --allow-unvalidated-bios only after reviewing firmware changes",
-            machine.bios,
-            EXPECTED_BIOS
+            "write overrides are disabled in this safety-hardened build; --allow-unsupported-hardware is available only with --debug"
         );
     }
-
+    transaction::validate_machine(&query_machine()?)?;
     let initial_variable = read_msi_variable()?;
     let initial_info = FirmwareInfo::decode(&initial_variable)?;
     if !initial_info.new_switch_supported {
@@ -406,7 +383,7 @@ fn run(args: Args, reporter: &Reporter) -> Result<RunOutcome> {
     if !is_elevated()? {
         bail!("the GPU mode selector requires {}", privilege_requirement());
     }
-    if !ac_power_online()? {
+    if !msi_gpu_mux::ac_power_online()? {
         bail!("AC power is required for a GPU mode transition");
     }
 
@@ -433,178 +410,12 @@ fn run(args: Args, reporter: &Reporter) -> Result<RunOutcome> {
         }
     }
 
-    let acpi = MsiAcpi::connect()?;
-    let ap_preflight = acpi.get_ap()?;
-    if ap_preflight.apply_ready {
-        bail!("apply-ready is already set before any write; refusing an ambiguous transition");
-    }
-    reporter.event(
-        "preflight",
-        format!(
-            "Preflight Get_AP data byte 1: 0x{:02X}; apply-ready is clear.",
-            ap_preflight.data_byte1
-        ),
-        json!({
-            "data_byte1": ap_preflight.data_byte1,
-            "apply_ready": false,
-        }),
-    )?;
-
-    let before = read_msi_variable()?;
-    if before.bytes.len() != EXPECTED_VARIABLE_LENGTH {
-        bail!(
-            "refusing write: expected a {}-byte MsiDCVarData value, found {}",
-            EXPECTED_VARIABLE_LENGTH,
-            before.bytes.len()
-        );
-    }
-    if before.attributes != EXPECTED_VARIABLE_ATTRIBUTES {
-        bail!(
-            "refusing write: expected UEFI attributes 0x{EXPECTED_VARIABLE_ATTRIBUTES:08X}, found 0x{:08X}",
-            before.attributes
-        );
-    }
-    let before_info = FirmwareInfo::decode(&before)?;
-    let previous_target = before_info
-        .selected_target_mode
-        .context("previous selected/target mode is not recognized")?;
-    let staged = FirmwareVariable {
-        bytes: stage_target(&before.bytes, target)?,
-        attributes: before.attributes,
-    };
-
-    let backup_dir = backup_directory()?;
-    fs::create_dir_all(&backup_dir)?;
-    let backup_path = backup_dir.join(format!(
-        "mux-target-{}.json",
-        Local::now().format("%Y%m%d-%H%M%S")
-    ));
-    let backup = BackupRecord {
-        created_at: Local::now().to_rfc3339(),
-        model: machine.model.clone(),
-        board: machine.board.clone(),
-        bios: machine.bios.clone(),
-        requested_target: target.value(),
-        requested_target_name: target,
-        previous_target: previous_target.value(),
-        previous_target_name: previous_target,
-        previous_current: before_info.current_value,
-        byte5_before: before_info.byte5,
-        byte5_staged: format!("0x{:02X}", staged.bytes[5]),
-        variable_length: before.bytes.len(),
-        attributes: format!("0x{:08X}", before.attributes),
-        variable_sha256: sha256_hex(&before.bytes),
-    };
-    fs::write(&backup_path, serde_json::to_vec_pretty(&backup)?)?;
-    reporter.event(
-        "rollback_record",
-        format!("Rollback record: {}", backup_path.display()),
-        json!({ "path": backup_path }),
-    )?;
-
-    let mut firmware_staged = false;
-    let mut trigger_sent = false;
-
-    let apply_result = (|| -> Result<()> {
-        if let Err(error) = write_msi_variable(&staged) {
-            firmware_staged = read_msi_variable()
-                .map(|current| current.bytes != before.bytes)
-                .unwrap_or(true);
-            return Err(error);
-        }
-        firmware_staged = true;
-
-        let after_stage = read_msi_variable()?;
-        if after_stage.bytes != staged.bytes || after_stage.attributes != staged.attributes {
-            bail!("UEFI target write verification failed");
-        }
-        reporter.event(
-            "target_staged",
-            format!(
-                "UEFI target verified: byte 5 changed from 0x{:02X} to 0x{:02X}.",
-                before.bytes[5], after_stage.bytes[5]
-            ),
-            json!({
-                "byte5_before": format!("0x{:02X}", before.bytes[5]),
-                "byte5_after": format!("0x{:02X}", after_stage.bytes[5]),
-            }),
-        )?;
-
-        let ap_before = acpi.get_ap()?;
-        if ap_before.apply_ready {
-            bail!("apply-ready became set before the trigger; refusing an ambiguous transition");
-        }
-        let trigger = trigger_value(ap_before.data_byte1);
-        reporter.event(
-            "trigger",
-            format!(
-                "Get_AP data byte 1 before trigger: 0x{:02X}.\nSending characterized Set_Data trigger: address 0xD1, value 0x{trigger:02X}.",
-                ap_before.data_byte1
-            ),
-            json!({
-                "data_byte1_before": ap_before.data_byte1,
-                "address": 0xd1,
-                "value": trigger,
-            }),
-        )?;
-        acpi.set_data(0xd1, trigger)?;
-        trigger_sent = true;
-
-        let deadline = Instant::now() + Duration::from_secs(5);
-        let ready = loop {
-            thread::sleep(Duration::from_millis(250));
-            let state = acpi.get_ap()?;
-            if state.apply_ready {
-                break state;
-            }
-            if Instant::now() >= deadline {
-                bail!("firmware did not assert apply-ready within five seconds");
-            }
-        };
-        reporter.event(
-            "apply_ready",
-            format!(
-                "Apply-ready asserted; Get_AP data byte 1 is 0x{:02X}.",
-                ready.data_byte1
-            ),
-            json!({
-                "data_byte1": ready.data_byte1,
-                "apply_ready": true,
-            }),
-        )?;
-        reporter.event(
-            "acknowledgement",
-            "Sending characterized Set_Data acknowledgement: address 0xBE, value 0x02.",
-            json!({ "address": 0xbe, "value": 2 }),
-        )?;
-        acpi.set_data(0xbe, 0x02)?;
-        Ok(())
-    })();
-
-    if let Err(error) = apply_result {
-        if firmware_staged {
-            match restore_previous_target(previous_target) {
-                Ok(()) => reporter.warning(
-                    "target_restored",
-                    format!("restored previous target mode: {previous_target}"),
-                    json!({ "mode": previous_target, "value": previous_target.value() }),
-                ),
-                Err(restore_error) => reporter.warning(
-                    "rollback_failed",
-                    format!("automatic target restoration also failed: {restore_error:#}"),
-                    Value::Null,
-                ),
-            }
-        }
-        if trigger_sent {
-            reporter.warning(
-                "trigger_sent_before_failure",
-                "the EC apply trigger was sent before failure; save work and perform a manual full shutdown",
-                Value::Null,
-            );
-        }
-        return Err(error);
-    }
+    let mut journal = DiskJournal::native()?;
+    transaction::apply::<NativePlatform, _>(target, &mut journal, |event, message, data| {
+        // Console I/O is not allowed to abort a hardware critical section.
+        // A closed output pipe leaves the durable journal as the source of truth.
+        let _ = reporter.event(event, message, data);
+    })?;
 
     let shutdown_command = shutdown_command();
     let verification_command = verification_command();

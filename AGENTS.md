@@ -22,13 +22,19 @@ ambiguous state.
 - `src/platform/mod.rs` defines the shared platform and ACPI traits and selects
   the native implementation. `src/platform/windows.rs` and
   `src/platform/linux.rs` contain all OS-specific system access.
-- `src/bin/msi-mux-switch.rs` contains the CLI, reporting, safety gates,
-  confirmation, backup metadata, apply sequence, and rollback handling.
+- `src/transaction.rs` contains the tested transaction state machine, durable
+  journal, uncertain-completion handling, and target restoration.
+- `src/bin/msi-mux-switch.rs` contains CLI parsing, reporting and confirmation.
+- `gui/` contains the Qt 6 tray/status window, translations and tests.
+- `packaging/` contains the privileged helper, Polkit policy, desktop metadata,
+  Arch package, and validated installer/uninstaller.
+- `scripts/` contains native build and bundle creation entry points.
 - `build.rs` and `resources/` embed the Windows manifest that requires
   Administrator privileges.
 
 Keep reusable protocol and system-access code in the library. Keep user
-interaction and top-level transaction orchestration in the binary.
+interaction in the binary and GUI; keep transaction orchestration testable in
+the library.
 
 ## Firmware contract and invariants
 
@@ -59,19 +65,23 @@ variable layouts, ACPI results, or capabilities.
 
 Preserve these protections when changing the switching flow:
 
-- Gate normal writes to the exact model and board, and gate the BIOS version
-  separately. Bypasses must remain explicit and conspicuously named.
-- Require an elevated Administrator process and online AC power.
+- Gate writes to the exact model, board and BIOS. Do not provide write bypasses.
+- Require root on Linux or Administrator on Windows, and online AC power.
 - Require the mode-specific typed confirmation for human-readable interactive
   switching. JSON mode deliberately skips this prompt for scripted use.
 - Refuse to start when apply-ready is already asserted.
-- Create the rollback metadata before staging the firmware target.
+- Persist transaction metadata before attempting firmware or ACPI writes.
+- Serialize access to the Linux debugfs ACPI transport across processes.
+- Record a trigger attempt before invoking it; failure to receive its response
+  does not prove that the firmware ignored the command.
 - Restore the previous target when a post-write step fails, then verify the
   restoration. Report restoration failures without hiding the original error.
 - Warn prominently when a trigger was sent before a later failure.
 - Never automatically reboot or shut down the user's machine. A successful
   transition must instruct the user to save work and perform a full shutdown.
-- Do not turn an override flag into a claim of hardware support.
+- Keep routine `--status` polling unprivileged and free of ACPI calls.
+- A target restoration is not a guarantee of full hardware rollback.
+- Keep the GUI unprivileged. Invoke only the fixed installed Polkit helper.
 
 Keep probes and tests that can mutate firmware opt-in and separate from the
 normal unit-test suite. Never exercise real firmware writes merely to validate
@@ -122,9 +132,8 @@ Run the test suite on Windows as well:
 cargo test --locked
 ```
 
-The crate deliberately does not compile for non-Windows targets. From another
-host, install a Windows standard library and give Clippy an explicit Windows
-target:
+The crate supports Linux and Windows. From Linux, also install a Windows
+standard library and give Clippy an explicit Windows target:
 
 ```text
 rustup target add x86_64-pc-windows-msvc
@@ -139,16 +148,22 @@ For protocol changes, add focused tests proving that unrelated bits and bytes
 remain unchanged, invalid layouts are rejected, and all new decoded values are
 handled explicitly. Review the human and JSON paths together.
 
+For Linux integration, run `scripts/build-linux.sh` and
+`scripts/package-linux.sh`. Check both UI languages using the inert `--demo`
+mode. Never switch a real MUX or shut down the host as an automated test.
+
 ## CI and releases
 
 - `.github/workflows/ci.yml` runs formatting, strict Clippy, tests, and release
   builds for Windows AMD64 and Linux AMD64 on pull requests and relevant branch
   pushes.
 - `.github/workflows/release.yml` builds and retains Windows AMD64 and Linux
-  AMD64 ZIPs on pull requests and `master` pushes. A pushed `v*` tag publishes
+  AMD64 bundles on pull requests and `master`/`linux-kde` pushes. A pushed `v*` tag publishes
   the archives and aggregate `SHA256SUMS` as a GitHub Release; the workflow
   does not create the tag.
-- Release archives contain `msi-mux-switch.exe`, `README.md`, `CHANGELOG.md`,
-  and `LICENSE`.
+- Linux archives contain the tray, backend, restricted helper, desktop metadata,
+  validated installer/uninstaller and checksums. Windows archives retain the CLI.
+- Keep Linux releases marked experimental/prerelease until documented hardware
+  validation has completed. CI cannot establish physical MUX behavior.
 - Keep external GitHub Actions pinned to full commit hashes with a version
   comment. Do not replace pins with movable tags or branches.

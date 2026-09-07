@@ -1,0 +1,30 @@
+# Maintainer: MSI MUX community contributors
+pkgname=msi-mux
+pkgver=0.3.0rc1
+_tag=v0.3.0-rc.1
+pkgrel=1
+pkgdesc='MSI GPU MUX CLI and Qt 6 tray (release candidate, limited characterized hardware)'
+arch=('x86_64')
+url='https://github.com/hayatboj/msi-gpu-mux-switch'
+license=('MIT')
+depends=('qt6-base' 'qt6-svg' 'polkit' 'gcc-libs' 'glibc')
+makedepends=('cmake' 'ninja' 'rust' 'git' 'python')
+checkdepends=('python')
+source=("msi-gpu-mux-switch::git+https://github.com/hayatboj/msi-gpu-mux-switch.git#tag=${_tag}")
+# Git source identity is the explicit release tag. makepkg does not checksum VCS sources.
+sha256sums=('SKIP')
+
+build() {
+  cmake -S msi-gpu-mux-switch -B build -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DBUILD_TESTING=ON
+  cmake --build build
+}
+
+check() {
+  QT_QPA_PLATFORM=offscreen ctest --test-dir build --output-on-failure
+}
+
+package() {
+  DESTDIR="$pkgdir" cmake --install build
+  install -Dm644 msi-gpu-mux-switch/LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

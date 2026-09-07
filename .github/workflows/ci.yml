@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - master
+      - linux-kde
       - 'steelbrain/**'
 
 permissions:
@@ -25,14 +26,25 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all --check
 
+      - name: Install Qt build dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build qt6-base-dev qt6-svg-dev libgl1-mesa-dev desktop-file-utils appstream
+
       - name: Run Clippy
         run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Run tests
         run: cargo test --locked
 
-      - name: Build release binary
-        run: cargo build --locked --release
+      - name: Build and test the tray and hardened helper
+        run: scripts/build-linux.sh
+
+      - name: Validate desktop metadata
+        run: |
+          desktop-file-validate packaging/org.hayatboj.msimux.desktop
+          appstreamcli validate --no-net packaging/org.hayatboj.msimux.metainfo.xml
+
+      - name: Stage and validate the offline bundle
+        run: scripts/package-linux.sh "$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')"
 
   test:
     name: Test (${{ matrix.platform }})

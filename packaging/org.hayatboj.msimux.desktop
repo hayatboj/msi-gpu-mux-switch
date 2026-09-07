@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=MSI MUX
+Name[tr]=MSI MUX
+Comment=Inspect and switch the GPU display path on supported MSI laptops
+Comment[tr]=Desteklenen MSI dizüstülerde GPU ekran bağlantısını inceleyin ve değiştirin
+Exec=msi-mux-tray
+Icon=org.hayatboj.msimux
+Terminal=false
+Categories=Settings;HardwareSettings;
+Keywords=MSI;GPU;MUX;NVIDIA;Optimus;
+StartupNotify=false
+DBusActivatable=false

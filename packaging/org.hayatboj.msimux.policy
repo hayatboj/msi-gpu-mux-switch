@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN" "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>MSI MUX community project</vendor>
+  <vendor_url>https://github.com/hayatboj/msi-gpu-mux-switch</vendor_url>
+  <action id="org.hayatboj.msimux.switch">
+    <description>Inspect or change the MSI GPU MUX mode</description>
+    <description xml:lang="tr">MSI GPU MUX modunu incele veya değiştir</description>
+    <message>Administrator authorization is required to access MSI MUX firmware. Switching requires a later manual full shutdown.</message>
+    <message xml:lang="tr">MSI MUX ürün yazılımına erişmek için yönetici yetkisi gerekiyor. Mod değişiminden sonra bilgisayarı elle tamamen kapatmanız gerekir.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/msi-mux/msi-mux-helper</annotate>
+  </action>
+</policyconfig>

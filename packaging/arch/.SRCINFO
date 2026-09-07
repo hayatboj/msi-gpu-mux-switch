@@ -1,0 +1,22 @@
+pkgbase = msi-mux
+	pkgdesc = MSI GPU MUX CLI and Qt 6 tray (release candidate, limited characterized hardware)
+	pkgver = 0.3.0rc1
+	pkgrel = 1
+	url = https://github.com/hayatboj/msi-gpu-mux-switch
+	arch = x86_64
+	license = MIT
+	checkdepends = python
+	makedepends = cmake
+	makedepends = ninja
+	makedepends = rust
+	makedepends = git
+	makedepends = python
+	depends = qt6-base
+	depends = qt6-svg
+	depends = polkit
+	depends = gcc-libs
+	depends = glibc
+	source = msi-gpu-mux-switch::git+https://github.com/hayatboj/msi-gpu-mux-switch.git#tag=v0.3.0-rc.1
+	sha256sums = SKIP
+
+pkgname = msi-mux

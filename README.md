@@ -1,246 +1,104 @@
-# MSI GPU MUX Switch
+# MSI MUX for KDE
 
-`msi-mux-switch` is a Windows and Linux command-line utility for inspecting and
-changing the GPU MUX mode on the MSI Vector 16 HX AI A2XWIG. It implements the
-switching flow without requiring MSI Center.
+[Türkçe](README.tr.md) · [Releases](https://github.com/hayatboj/msi-gpu-mux-switch/releases) · [Recovery](docs/RECOVERY.md) · [Security](SECURITY.md)
 
-Available modes:
+A native Qt 6 tray application for controlling the GPU MUX on a supported MSI laptop. See the current graphics mode, right-click the KDE system tray icon to choose a mode, and switch between English and Turkish without restarting the application.
 
-- `mshybrid` — makes both GPUs available to the operating system
-- `discrete` — selects the dedicated GPU
-- `integrated` — selects the integrated GPU
+![English KDE interface, using synthetic demo data](docs/images/kde-en.png)
 
-Aliases such as `hybrid`, `ms-hybrid`, `dgpu`, `igpu`, and `uma` are accepted.
+**Hardware validation status:** the original project's Windows switching path was characterized on the laptop below. Linux diagnostics work on this configuration. Live Linux firmware switching and recovery still require a documented hardware validation run. This fork must not be described as hardware-validated or universally compatible until that evidence exists. The current release is a release candidate.
 
-> [!CAUTION]
-> Switching writes an OEM UEFI variable and invokes OEM ACPI methods. A failed,
-> interrupted, or incorrect firmware operation can require recovery and may
-> prevent the machine from booting. Connect AC power, save your work, and keep
-> any disk-encryption recovery key available off the laptop.
-
-## Hardware support
-
-The firmware contract is characterized for exactly this system:
-
-| Component | Required value |
-| --- | --- |
-| Laptop | MSI Vector 16 HX AI A2XWIG |
+| Supported configuration | Value |
+|---|---|
+| Model | MSI Vector 16 HX AI A2XWIG |
 | Motherboard | MS-15M3 |
 | BIOS | E15M3IMS.116 |
-| Architecture | AMD64 |
-| Operating system | Windows or Linux |
+| Platform | Linux x86-64, UEFI boot |
+| Desktop | KDE Plasma with a StatusNotifierItem system tray |
 
-Normal switching requires an exact model and motherboard match. The BIOS is
-checked separately. Development override flags exist, but they do not turn an
-unknown machine or BIOS into a supported configuration.
+Other MSI laptops and BIOS versions are not enabled by the desktop application. Having an NVIDIA GPU, or a similarly named MSI model, is not sufficient.
 
-Windows switching is the original characterized path. Linux diagnostics have
-been verified on the supported laptop. The Linux switching path is implemented
-against the in-tree kernel interface and passes synthetic tests, but has not
-yet been exercised as a live firmware write; treat it as experimental until
-that validation is completed.
+## Features
 
-## Installation
+- Current firmware mode and requested next mode shown separately.
+- Hybrid, Discrete, and Integrated modes when advertised by the firmware.
+- Actual GPU driving the internal panel.
+- KDE tray menu, compact status window, English/Turkish UI, optional login startup.
+- Polkit authorization through a narrowly scoped helper; the GUI never runs as root.
+- Read-only polling without MSI ACPI calls or `nvidia-smi` GPU wakeups.
+- Serialized firmware transactions and durable transaction metadata.
+- Explicit confirmation and a pending shutdown state; no automatic reboot.
 
-### Windows
+This changes the hardware graphics mode. PRIME render offload selects the GPU used by an application and is a different operation.
 
-Download `windows-amd64-msi-mux-switch.zip` and `SHA256SUMS` from the
-[latest release](https://github.com/steelbrain/msi-gpu-mux-switch/releases).
-Verify the archive, extract it, and run `msi-mux-switch.exe`. Its embedded
-manifest requests Administrator privileges.
+## Using the tray
 
-To build it yourself, install Rust 1.85 or newer and the MSVC build tools, then
-run:
+Open **MSI MUX** from the application launcher. Right-click its tray icon to see the current mode and choose an available mode. Left-click to open the status window. The language menu switches between **English** and **Türkçe**. Startup at login is optional.
 
-```powershell
-cargo build --locked --release
+Switching requires AC power, matching hardware/BIOS, readable firmware state, and no unresolved previous transaction. After a successful request, the application displays a pending shutdown state; it does not pretend that the physical display connection has already changed.
+
+Save your work before using the explicit shutdown action. After powering on, verify both the reported current mode and the internal display's GPU. On this laptop, Discrete mode disables display output through the Intel-wired Thunderbolt ports; HDMI is wired to NVIDIA.
+
+## Install
+
+Use the Linux archive and `SHA256SUMS` from [this fork's releases](https://github.com/hayatboj/msi-gpu-mux-switch/releases). Check the release's hardware validation notes. Extract the archive, then run from the extracted directory:
+
+```sh
+python3 install.py --check
+sudo python3 install.py
 ```
 
-The executable is written to `target\release\msi-mux-switch.exe`.
+Remove the archive installation with its `uninstall.py`. Do not install both the archive bundle and Arch package at the same time. Installation does not enable login startup automatically.
 
-### Linux
+The archive targets Linux x86-64 and requires Qt 6 and Polkit. Distribution-native building is preferred when the release binary's runtime requirements do not match your distribution.
 
-Linux switching requires:
+## Build
 
-- Linux 6.10 or newer with the in-tree `msi-wmi-platform` driver
-- EFI runtime services with efivarfs mounted at `/sys/firmware/efi/efivars`
-- debugfs mounted at `/sys/kernel/debug`
-- root privileges for switching and full ACPI diagnostics
-- Rust 1.85 or newer when building from source
+Development dependencies: Rust 1.88+, CMake, a C++20 compiler, Python 3, and Qt 6 Core, Gui, Widgets, Network, DBus, Svg, and Test. On Arch/CachyOS these are provided by `base-devel`, `cmake`, `ninja`, `rust`, `python`, `qt6-base`, and `qt6-svg`; runtime authorization uses `polkit` and a desktop authentication agent.
 
-Download `linux-amd64-msi-mux-switch.zip` and `SHA256SUMS` from the
-[latest release](https://github.com/steelbrain/msi-gpu-mux-switch/releases),
-verify the archive, and extract it. The archive contains the
-`msi-mux-switch` executable and project documentation.
-
-Alternatively, build the release binary from source with:
-
-```bash
-cargo build --locked --release
+```sh
+./scripts/build-linux.sh
+./scripts/package-linux.sh 0.3.0-rc.1
 ```
 
-The executable is written to `target/release/msi-mux-switch`.
+Arch packaging is in [`packaging/`](packaging/). The running kernel needs the MSI WMI platform driver for detailed diagnostics and mode changes.
 
-The program checks that the expected MSI WMI device is attached to the
-characterized ACPI parent, bound to `msi-wmi-platform`, and exposed through the
-driver's root-owned mode-`0600` debugfs method files. It fails before staging a
-firmware target if those checks do not pass.
+| Installed path | Purpose |
+|---|---|
+| `/usr/bin/msi-mux-tray` | Unprivileged desktop application |
+| `/usr/bin/msi-mux-switch` | Rust backend |
+| `/usr/lib/msi-mux/msi-mux-helper` | Restricted privileged helper |
+| `/usr/share/polkit-1/actions/org.hayatboj.msimux.policy` | Authentication policy |
+| `/var/lib/msi-mux/` | Root-controlled transaction metadata |
 
-## Usage
-
-Run without a mode for the interactive selector:
-
-```powershell
-# Windows
-.\msi-mux-switch.exe
-```
-
-```bash
-# Linux
-sudo ./msi-mux-switch
-```
-
-Or provide the target directly:
-
-```powershell
-.\msi-mux-switch.exe mshybrid
-.\msi-mux-switch.exe discrete
-.\msi-mux-switch.exe integrated
-```
-
-```bash
-sudo ./msi-mux-switch mshybrid
-sudo ./msi-mux-switch discrete
-sudo ./msi-mux-switch integrated
-```
-
-Interactive switching requires the mode-specific typed confirmation. The
-program never reboots, shuts down, or powers off the laptop automatically.
-
-After a successful apply:
-
-1. Save all work and close applications.
-2. Perform a full shutdown.
-3. Power the laptop on again.
-4. Run `--debug` to verify the reported current mode.
+The helper accepts only supported mode names and diagnostics. It does not accept a program path, shell command, arbitrary firmware value, or hardware override from the GUI.
 
 ## Read-only diagnostics
 
-Diagnostics do not stage a target or invoke a write method:
+Routine status does not invoke ACPI:
 
-```powershell
-.\msi-mux-switch.exe --debug
-.\msi-mux-switch.exe --debug --json
+```sh
+msi-mux-switch --status --json
 ```
 
-```bash
-./msi-mux-switch --debug
-./msi-mux-switch --debug --json
+Detailed diagnostics additionally query MSI WMI when permission is available:
+
+```sh
+msi-mux-switch --debug --json
 ```
 
-The report includes:
-
-- detected manufacturer, model, motherboard, and BIOS
-- Secure Boot state
-- UEFI variable length, attributes, selected target, and current mode
-- advertised MUX capabilities
-- MSI ACPI `Get_AP` state when accessible
-- detected display controllers
-- relevant MSI Center registry values on Windows
-
-On Linux, the root-only debugfs permissions mean an ordinary-user diagnostic
-usually reports `Get_AP` as unavailable. Run the diagnostic with `sudo` only if
-that additional read is needed.
-
-## JSON output
-
-Add `--json` to a switching command to emit one JSON event per line on standard
-output:
-
-```bash
-sudo ./msi-mux-switch discrete --json
-```
-
-Warnings, prompts, CLI errors, and runtime errors go to standard error. Debug
-mode emits one formatted `StateSnapshot` document with `schema_version` set to
-`1`.
-
-JSON switching deliberately skips typed confirmation for automation. It does
-not skip hardware, BIOS, privilege, AC-power, firmware-layout, or ACPI
-preflight checks.
-
-## Safety and rollback
-
-Before changing firmware, the utility:
-
-1. Verifies the exact model, motherboard, and BIOS unless an explicit override
-   was supplied.
-2. Requires Administrator or root privileges and online AC power.
-3. Validates the MUX capabilities and refuses an unknown mode encoding.
-4. Refuses to continue if ACPI apply-ready is already asserted.
-5. Reads the UEFI variable again immediately before the write.
-6. Requires an exact 20-byte value with attributes `0x00000007`.
-7. Records rollback metadata and a SHA-256 hash without copying the raw UEFI
-   value.
-8. Changes only byte 5 target bits 0–1.
-9. Reads back and verifies the complete value and its attributes.
-10. Performs the characterized trigger, readiness, and acknowledgement
-    handshake.
-
-If a post-write step fails, the previous target is restored and verified. If a
-trigger was already sent, the error prominently warns that machine state may
-have changed and recommends a full shutdown.
-
-Rollback metadata is stored under:
-
-- Windows: `%LOCALAPPDATA%\msi-gpu-mux\backups`
-- Linux: `$XDG_STATE_HOME/msi-gpu-mux/backups`, falling back to
-  `$HOME/.local/state/msi-gpu-mux/backups`
-
-On Linux, the original efivarfs inode flags are restored after every attempted
-write.
-
-## Options
-
-| Option | Meaning |
-| --- | --- |
-| `MODE` | Target mode, or omit it for the interactive selector |
-| `--debug` | Collect read-only diagnostics and exit |
-| `--json` | Emit structured output and skip typed confirmation |
-| `--allow-unsupported-hardware` | Deliberately bypass the model/board gate |
-| `--allow-unvalidated-bios` | Deliberately permit a different BIOS version |
-| `--help` | Show complete command help |
-
-The override flags are intended for deliberate characterization work. They do
-not claim that the detected hardware supports the switching protocol.
+A successful diagnostic is not proof that physical switching or recovery has succeeded.
 
 ## Development
 
-The platform-independent protocol and transaction orchestration live in
-`src/lib.rs` and `src/bin/msi-mux-switch.rs`. Native system access is isolated
-behind shared traits in `src/platform/`, with separate Windows and Linux
-implementations.
+Read [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md), and the [validation record](docs/VALIDATION.md). CI tests synthetic firmware failures, GUI parsing and gating, localization, helper restrictions, and installation boundaries. It also builds the preserved Windows CLI.
 
-Required checks:
+Never run a real firmware write as a unit test, installation check, screenshot step, or CI action. Hardware validation is a separate operation followed by complete shutdown and post-boot verification.
 
-```bash
-cargo fmt --all --check
-cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked
-```
+## Limits
 
-From Linux, also validate the Windows code with:
+The tool writes an OEM UEFI variable and invokes MSI ACPI methods. Failure after a trigger can leave the hardware outcome uncertain. Returning previous target bits does not reverse every hardware action. BIOS defaults or an EC reset are not guaranteed recovery. Read [the recovery notes](docs/RECOVERY.md) before a first hardware trial.
 
-```bash
-rustup target add x86_64-pc-windows-msvc
-cargo clippy --locked --target x86_64-pc-windows-msvc --all-targets -- -D warnings
-```
+## Upstream and license
 
-Do not use real firmware writes merely to validate a refactor. See
-[AGENTS.md](AGENTS.md) for the complete protocol invariants and safety rules.
-
-Release history is recorded in [CHANGELOG.md](CHANGELOG.md).
-
-## License
-
-Licensed under the [MIT License](LICENSE).
+Forked from [steelbrain/msi-gpu-mux-switch](https://github.com/steelbrain/msi-gpu-mux-switch). Original copyright notices and Windows protocol work are retained. This fork adds the KDE application, Linux integration, packaging, and transaction hardening. [MIT license](LICENSE). Independent project; not affiliated with MSI or NVIDIA.

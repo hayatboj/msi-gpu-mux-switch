@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0-rc.1] - 2026-09-07
+
+### Added
+
+- Native Qt 6 KDE tray application with current and requested mode, internal
+  panel GPU, right-click switching, English/Turkish translation, and opt-in autostart.
+- Restricted root helper and Polkit authentication; the desktop stays unprivileged.
+- Read-only `--status --json` polling without ACPI calls.
+- Durable transaction journal, interprocess locking, interrupted-operation
+  detection, and explicit handling of uncertain firmware command completion.
+- Linux installation bundle with checksums, validated installation/removal,
+  Arch packaging, desktop metadata, and software validation in CI.
+- Synthetic transaction, GUI, helper, and installer tests; recovery guidance
+  and an explicit hardware validation checklist.
+
+### Changed
+
+- Writes now fail closed outside the characterized model, board, and BIOS.
+- Current and requested modes remain distinct until a full shutdown/power-on.
+- Linux releases are explicitly experimental pending real MUX/recovery validation.
+- Windows CLI support and upstream protocol definitions are preserved.
+
 ## [0.2.0] - 2026-08-31
 
 ### Added
@@ -40,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Embedded Windows manifest requesting Administrator privileges.
 - Windows CI, release archives, SHA-256 checksums, and tagged GitHub Releases.
 
-[Unreleased]: https://github.com/steelbrain/msi-gpu-mux-switch/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/hayatboj/msi-gpu-mux-switch/compare/v0.3.0-rc.1...linux-kde
+[0.3.0-rc.1]: https://github.com/hayatboj/msi-gpu-mux-switch/releases/tag/v0.3.0-rc.1
 [0.2.0]: https://github.com/steelbrain/msi-gpu-mux-switch/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/steelbrain/msi-gpu-mux-switch/releases/tag/v0.1.0

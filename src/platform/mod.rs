@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 
-use crate::{ApState, DisplayDevice, FirmwareVariable, MachineInfo};
+use crate::{ApState, DisplayDevice, FirmwareVariable, InternalDisplay, MachineInfo};
 
 pub trait AcpiAccess: Sized {
     fn connect() -> Result<Self>;
@@ -20,6 +20,15 @@ pub trait Platform {
     fn secure_boot_enabled() -> Result<bool>;
     fn query_machine() -> Result<MachineInfo>;
     fn query_display_devices() -> Result<Vec<DisplayDevice>>;
+    fn query_internal_displays() -> Result<Vec<InternalDisplay>> {
+        Ok(Vec::new())
+    }
+    fn acpi_available() -> Result<()> {
+        Ok(())
+    }
+    fn boot_id() -> Result<String> {
+        Ok(String::from("unknown-boot"))
+    }
     fn ac_power_online() -> Result<bool>;
     fn query_registry_state() -> BTreeMap<String, Option<u32>>;
     fn backup_directory() -> Result<PathBuf>;
@@ -110,4 +119,14 @@ pub fn verification_command() -> &'static str {
 
 pub fn wait_for_keypress() {
     NativePlatform::wait_for_keypress();
+}
+
+pub fn query_internal_displays() -> Result<Vec<InternalDisplay>> {
+    NativePlatform::query_internal_displays()
+}
+pub fn acpi_available() -> Result<()> {
+    NativePlatform::acpi_available()
+}
+pub fn boot_id() -> Result<String> {
+    NativePlatform::boot_id()
 }

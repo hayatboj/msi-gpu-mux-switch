@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 pub mod platform;
+pub mod transaction;
 
 pub use platform::{
     MsiAcpi, ac_power_online, backup_directory, is_elevated, privilege_requirement,
@@ -218,6 +219,16 @@ impl<T> AvailableSection<T> {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct InternalDisplay {
+    pub connector: String,
+    pub status: String,
+    pub enabled: bool,
+    pub vendor: String,
+    pub driver: Option<String>,
+    pub pci_address: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct StateSnapshot {
     pub schema_version: u32,
     pub captured_at: String,
@@ -228,6 +239,12 @@ pub struct StateSnapshot {
     pub firmware: AvailableSection<FirmwareInfo>,
     pub wmi_ap: AvailableSection<ApState>,
     pub display_devices: Vec<DisplayDevice>,
+    pub ac_power_online: bool,
+    pub internal_displays: Vec<InternalDisplay>,
+    pub switching_supported: bool,
+    pub switching_block_reason: Option<String>,
+    pub switching_block_code: Option<String>,
+    pub pending_shutdown: bool,
 }
 
 pub fn stage_target(bytes: &[u8], target: Mode) -> Result<Vec<u8>> {
@@ -266,32 +283,124 @@ pub(crate) fn validate_writable_variable(variable: &FirmwareVariable) -> Result<
     Ok(())
 }
 
+/// Optional ACPI diagnostics. Calls are serialized with firmware transactions.
 pub fn collect_snapshot(allow_unknown_hardware: bool) -> Result<StateSnapshot> {
+    collect_state(allow_unknown_hardware, true)
+}
+
+/// Pure status reads: never connects to or invokes the ACPI/debugfs transport.
+pub fn collect_status() -> Result<StateSnapshot> {
+    collect_state(true, false)
+}
+
+fn collect_state(allow_unknown_hardware: bool, diagnose_acpi: bool) -> Result<StateSnapshot> {
+    use transaction::{DiskJournal, Journal, pending_state, validate_machine};
     let machine = query_machine()?;
     if !machine.expected_hardware && !allow_unknown_hardware {
         bail!(
-            "unsupported hardware: model '{}', board '{}'; use the explicit override only for a deliberate read-only capture",
+            "unsupported hardware: model '{}', board '{}'",
             machine.model,
             machine.board
         );
     }
-
+    let variable = read_msi_variable();
+    let layout_error = variable
+        .as_ref()
+        .ok()
+        .and_then(|v| validate_writable_variable(v).err())
+        .map(|e| e.to_string());
     let firmware = AvailableSection::from_result(
-        read_msi_variable().and_then(|variable| FirmwareInfo::decode(&variable)),
+        variable.and_then(|variable| FirmwareInfo::decode(&variable)),
     );
-    let wmi_ap = AvailableSection::from_result(MsiAcpi::connect().and_then(|wmi| wmi.get_ap()));
-    let secure_boot = AvailableSection::from_result(secure_boot_enabled());
-
+    let power = ac_power_online().unwrap_or(false);
+    let record = DiskJournal::native().and_then(|journal| journal.load());
+    let boot_id = platform::boot_id().unwrap_or_else(|_| "unknown-boot".into());
+    let (pending, pending_shutdown) = match (&record, &firmware.value) {
+        (Ok(record), Some(info)) => {
+            let state = pending_state(record.as_ref(), info, &boot_id);
+            (state.reason().map(str::to_owned), state.needs_shutdown())
+        }
+        (Err(error), _) => (
+            Some(format!("transaction journal unavailable: {error:#}")),
+            false,
+        ),
+        _ => (None, false),
+    };
+    let block = validate_machine(&machine)
+        .err()
+        .map(|e| {
+            let code = if machine.model != EXPECTED_MODEL || machine.board != EXPECTED_BOARD {
+                "unsupported_hardware"
+            } else {
+                "unvalidated_bios"
+            };
+            (code, e.to_string())
+        })
+        .or_else(|| layout_error.map(|e| ("invalid_firmware", e)))
+        .or_else(|| firmware.error.clone().map(|e| ("firmware_unavailable", e)))
+        .or_else(|| {
+            firmware
+                .value
+                .as_ref()
+                .filter(|f| !f.new_switch_supported)
+                .map(|_| {
+                    (
+                        "unsupported_interface",
+                        "firmware does not advertise the characterized switch".into(),
+                    )
+                })
+        })
+        .or_else(|| {
+            pending.clone().map(|e| {
+                (
+                    if pending_shutdown {
+                        "pending_shutdown"
+                    } else {
+                        "recovery_required"
+                    },
+                    e,
+                )
+            })
+        })
+        .or_else(|| {
+            (!power).then(|| {
+                (
+                    "ac_power_required",
+                    "AC power is required for switching".into(),
+                )
+            })
+        })
+        .or_else(|| {
+            platform::acpi_available().err().map(|e| {
+                (
+                    "acpi_unavailable",
+                    format!("MSI ACPI transport unavailable: {e:#}"),
+                )
+            })
+        });
+    let wmi_ap = if diagnose_acpi {
+        AvailableSection::from_result(MsiAcpi::connect().and_then(|wmi| wmi.get_ap()))
+    } else {
+        AvailableSection::from_result(Err(anyhow::anyhow!(
+            "not probed: --status never invokes ACPI; use --debug for an explicit diagnostic"
+        )))
+    };
     Ok(StateSnapshot {
         schema_version: 1,
         captured_at: Local::now().to_rfc3339(),
         elevated: is_elevated().unwrap_or(false),
         machine,
-        secure_boot,
+        secure_boot: AvailableSection::from_result(secure_boot_enabled()),
         registry: platform::query_registry_state(),
         firmware,
         wmi_ap,
         display_devices: query_display_devices()?,
+        ac_power_online: power,
+        internal_displays: platform::query_internal_displays()?,
+        switching_supported: block.is_none(),
+        switching_block_reason: block.as_ref().map(|(_, reason)| reason.clone()),
+        switching_block_code: block.map(|(code, _)| code.into()),
+        pending_shutdown,
     })
 }
 

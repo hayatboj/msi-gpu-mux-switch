@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - linux-kde
     tags:
       - 'v*'
   pull_request:
@@ -34,7 +35,12 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Build binary
+        if: runner.os == 'Windows'
         run: cargo build --locked --release --target "${{ matrix.target }}"
+
+      - name: Install Qt build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build qt6-base-dev qt6-svg-dev libgl1-mesa-dev
 
       - name: Package Windows archive
         if: runner.os == 'Windows'
@@ -51,26 +57,26 @@ jobs:
           $hash = (Get-FileHash "dist\$archive" -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $archive" | Set-Content "dist\$archive.sha256" -Encoding ascii
 
-      - name: Package Linux archive
+      - name: Build and package Linux tray bundle
         if: runner.os == 'Linux'
-        env:
-          PLATFORM: ${{ matrix.platform }}
-          TARGET: ${{ matrix.target }}
         run: |
           set -euo pipefail
-          mkdir -p dist staging
-          cp "target/$TARGET/release/msi-mux-switch" README.md CHANGELOG.md LICENSE staging/
-          archive="$PLATFORM-msi-mux-switch.zip"
-          (cd staging && python3 -m zipfile -c "../dist/$archive" ./*)
-          (cd dist && sha256sum "$archive" > "$archive.sha256")
+          version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
+          if [[ "$GITHUB_REF" == refs/tags/v* && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo 'Tag and Cargo package version must match' >&2
+            exit 1
+          fi
+          scripts/build-linux.sh
+          scripts/package-linux.sh "$version"
 
       - name: Upload archive
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: msi-mux-switch-${{ matrix.platform }}
           path: |
-            dist/${{ matrix.platform }}-msi-mux-switch.zip
-            dist/${{ matrix.platform }}-msi-mux-switch.zip.sha256
+            dist/*.zip
+            dist/*.tar.gz
+            dist/*.sha256
           retention-days: 30
 
   release:
@@ -90,15 +96,29 @@ jobs:
       - name: Aggregate checksums
         run: |
           set -euo pipefail
-          cd dist
-          cat *.sha256 > SHA256SUMS
-          rm *.sha256
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          archives = sorted(p for p in Path('dist').iterdir() if p.name.endswith(('.zip', '.tar.gz')))
+          if len(archives) != 2:
+              raise SystemExit('Expected exactly Windows and Linux archives')
+          lines = []
+          for archive in archives:
+              checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
+              expected = f'{checksum}  {archive.name}\n'
+              if archive.with_name(archive.name + '.sha256').read_text().strip() != expected.strip():
+                  raise SystemExit(f'Checksum mismatch: {archive.name}')
+              lines.append(expected)
+          Path('dist/SHA256SUMS').write_text(''.join(lines))
+          PY
 
       - name: Publish release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: |
             dist/*-msi-mux-switch.zip
+            dist/msi-mux-*-linux-x86_64.tar.gz
             dist/SHA256SUMS
           generate_release_notes: true
           fail_on_unmatched_files: true
+          prerelease: ${{ contains(github.ref_name, '-') }}

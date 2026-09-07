@@ -9,8 +9,8 @@ use anyhow::{Context, Result, anyhow, bail};
 use super::{AcpiAccess, Platform};
 use crate::{
     ApState, DisplayDevice, EFI_GLOBAL_VARIABLE_GUID, EXPECTED_BOARD, EXPECTED_MODEL,
-    FirmwareVariable, MSI_VARIABLE_GUID, MSI_VARIABLE_NAME, MachineInfo, SECURE_BOOT_VARIABLE_NAME,
-    decode_ap_state, validate_writable_variable,
+    FirmwareVariable, InternalDisplay, MSI_VARIABLE_GUID, MSI_VARIABLE_NAME, MachineInfo,
+    SECURE_BOOT_VARIABLE_NAME, decode_ap_state, validate_writable_variable,
 };
 
 const MSI_WMI_DEVICE_NAME: &str = "ABBC0F6E-8EA1-11D1-00A0-C90629100000-0";
@@ -26,6 +26,7 @@ pub struct LinuxPlatform;
 
 pub struct LinuxAcpi {
     debugfs_directory: PathBuf,
+    _lock: crate::transaction::OperationLock,
 }
 
 impl Platform for LinuxPlatform {
@@ -155,14 +156,54 @@ impl Platform for LinuxPlatform {
     }
 
     fn backup_directory() -> Result<PathBuf> {
-        let root = std::env::var_os("XDG_STATE_HOME")
-            .map(PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("HOME")
-                    .map(|home| PathBuf::from(home).join(".local").join("state"))
-            })
-            .unwrap_or(std::env::current_dir()?);
-        Ok(root.join("msi-gpu-mux").join("backups"))
+        Ok(PathBuf::from("/var/lib/msi-mux"))
+    }
+
+    fn boot_id() -> Result<String> {
+        read_trimmed("/proc/sys/kernel/random/boot_id")
+    }
+
+    fn acpi_available() -> Result<()> {
+        validate_acpi_transport(false).map(|_| ())
+    }
+
+    fn query_internal_displays() -> Result<Vec<InternalDisplay>> {
+        let mut displays = Vec::new();
+        for entry in std::fs::read_dir("/sys/class/drm").context("read DRM connectors")? {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if !name.contains("-eDP-") && !name.contains("-LVDS-") && !name.contains("-DSI-") {
+                continue;
+            }
+            let path = entry.path();
+            let card = name.split('-').next().unwrap_or_default();
+            let device = PathBuf::from("/sys/class/drm").join(card).join("device");
+            let vendor_id = read_trimmed(device.join("vendor")).unwrap_or_default();
+            let vendor = match vendor_id.as_str() {
+                "0x10de" => "NVIDIA".to_owned(),
+                "0x8086" => "Intel".to_owned(),
+                "0x1002" => "AMD".to_owned(),
+                _ => vendor_id,
+            };
+            let driver = std::fs::canonicalize(device.join("driver"))
+                .ok()
+                .and_then(|p| p.file_name().map(|s| s.to_string_lossy().into_owned()));
+            let pci_address = std::fs::canonicalize(&device)
+                .ok()
+                .and_then(|p| p.file_name().map(|s| s.to_string_lossy().into_owned()));
+            displays.push(InternalDisplay {
+                connector: name,
+                status: read_trimmed(path.join("status")).unwrap_or_else(|_| "unknown".to_owned()),
+                enabled: read_trimmed(path.join("enabled"))
+                    .map(|s| s == "enabled")
+                    .unwrap_or(false),
+                vendor,
+                driver,
+                pci_address,
+            });
+        }
+        displays.sort_by(|a, b| a.connector.cmp(&b.connector));
+        Ok(displays)
     }
 
     fn privilege_requirement() -> &'static str {
@@ -186,50 +227,12 @@ impl Platform for LinuxPlatform {
 
 impl AcpiAccess for LinuxAcpi {
     fn connect() -> Result<Self> {
-        let wmi_device = PathBuf::from("/sys/bus/wmi/devices").join(MSI_WMI_DEVICE_NAME);
-        let canonical_device = std::fs::canonicalize(&wmi_device)
-            .with_context(|| format!("resolve expected MSI WMI device {}", wmi_device.display()))?;
-        if !canonical_device
-            .components()
-            .any(|component| component.as_os_str() == EXPECTED_LINUX_WMI_PARENT)
-        {
-            bail!(
-                "expected MSI WMI device is not attached to {EXPECTED_LINUX_WMI_PARENT}: {}",
-                canonical_device.display()
-            );
-        }
-        let driver = std::fs::canonicalize(wmi_device.join("driver"))
-            .context("resolve driver bound to the expected MSI WMI device")?;
-        if driver.file_name().and_then(|name| name.to_str()) != Some(MSI_WMI_DRIVER_NAME) {
-            bail!(
-                "expected MSI WMI device is not bound to the {MSI_WMI_DRIVER_NAME} kernel driver"
-            );
-        }
-        if read_trimmed(wmi_device.join("guid"))? != MSI_WMI_GUID
-            || read_trimmed(wmi_device.join("object_id"))? != "AM"
-            || read_trimmed(wmi_device.join("instance_count"))? != "1"
-        {
-            bail!("expected MSI WMI device metadata does not match the characterized interface");
-        }
-
-        let debugfs_directory = PathBuf::from("/sys/kernel/debug")
-            .join(format!("{MSI_WMI_DRIVER_NAME}-{MSI_WMI_DEVICE_NAME}"));
-        for method in ["get_ap", "set_data"] {
-            let path = debugfs_directory.join(method);
-            let metadata = std::fs::metadata(&path).with_context(|| {
-                format!(
-                    "inspect {}; ensure debugfs is mounted and the process is root",
-                    path.display()
-                )
-            })?;
-            if !metadata.is_file() || metadata.uid() != 0 || metadata.mode() & 0o777 != 0o600 {
-                bail!(
-                    "{} is not the expected root-owned mode-0600 debugfs method file",
-                    path.display()
-                );
-            }
-        }
-        Ok(Self { debugfs_directory })
+        let lock = crate::transaction::OperationLock::acquire()?;
+        let debugfs_directory = validate_acpi_transport(true)?;
+        Ok(Self {
+            debugfs_directory,
+            _lock: lock,
+        })
     }
 
     fn get_ap(&self) -> Result<ApState> {
@@ -246,6 +249,53 @@ impl AcpiAccess for LinuxAcpi {
         }
         Ok(())
     }
+}
+
+fn validate_acpi_transport(check_debugfs: bool) -> Result<PathBuf> {
+    let wmi_device = PathBuf::from("/sys/bus/wmi/devices").join(MSI_WMI_DEVICE_NAME);
+    let canonical_device = std::fs::canonicalize(&wmi_device)
+        .with_context(|| format!("resolve expected MSI WMI device {}", wmi_device.display()))?;
+    if !canonical_device
+        .components()
+        .any(|component| component.as_os_str() == EXPECTED_LINUX_WMI_PARENT)
+    {
+        bail!(
+            "expected MSI WMI device is not attached to {EXPECTED_LINUX_WMI_PARENT}: {}",
+            canonical_device.display()
+        );
+    }
+    let driver = std::fs::canonicalize(wmi_device.join("driver"))
+        .context("resolve driver bound to the expected MSI WMI device")?;
+    if driver.file_name().and_then(|name| name.to_str()) != Some(MSI_WMI_DRIVER_NAME) {
+        bail!("expected MSI WMI device is not bound to the {MSI_WMI_DRIVER_NAME} kernel driver");
+    }
+    if read_trimmed(wmi_device.join("guid"))? != MSI_WMI_GUID
+        || read_trimmed(wmi_device.join("object_id"))? != "AM"
+        || read_trimmed(wmi_device.join("instance_count"))? != "1"
+    {
+        bail!("expected MSI WMI device metadata does not match the characterized interface");
+    }
+
+    let debugfs_directory = PathBuf::from("/sys/kernel/debug")
+        .join(format!("{MSI_WMI_DRIVER_NAME}-{MSI_WMI_DEVICE_NAME}"));
+    if check_debugfs {
+        for method in ["get_ap", "set_data"] {
+            let path = debugfs_directory.join(method);
+            let metadata = std::fs::metadata(&path).with_context(|| {
+                format!(
+                    "inspect {}; ensure debugfs is mounted and the process is root",
+                    path.display()
+                )
+            })?;
+            if !metadata.is_file() || metadata.uid() != 0 || metadata.mode() & 0o777 != 0o600 {
+                bail!(
+                    "{} is not the expected root-owned mode-0600 debugfs method file",
+                    path.display()
+                );
+            }
+        }
+    }
+    Ok(debugfs_directory)
 }
 
 impl LinuxAcpi {

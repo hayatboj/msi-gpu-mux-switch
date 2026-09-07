@@ -2,3 +2,9 @@
 
 # Rust build output; Cargo.lock remains tracked for reproducible binaries.
 target/
+
+# Native builds and release staging.
+/build-linux/
+/dist/
+__pycache__/
+*.user

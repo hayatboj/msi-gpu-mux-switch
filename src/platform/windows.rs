@@ -149,6 +149,21 @@ impl Platform for WindowsPlatform {
         Ok(rows.into_iter().any(|row| row.PowerOnline))
     }
 
+    fn boot_id() -> Result<String> {
+        #[derive(Deserialize)]
+        struct BootInfo {
+            #[serde(rename = "LastBootUpTime")]
+            last_boot_up_time: String,
+        }
+        let connection = WMIConnection::new().context("connect for boot identity")?;
+        let boot = connection
+            .raw_query::<BootInfo>("SELECT LastBootUpTime FROM Win32_OperatingSystem")?
+            .into_iter()
+            .next()
+            .context("no Windows boot identity returned")?;
+        Ok(boot.last_boot_up_time)
+    }
+
     fn query_registry_state() -> BTreeMap<String, Option<u32>> {
         const NAMES: [&str; 7] = [
             "GPUswitchSP",

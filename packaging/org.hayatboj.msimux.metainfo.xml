@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.hayatboj.msimux</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>MSI MUX</name>
+  <summary>Inspect and switch supported MSI GPU MUX modes</summary>
+  <summary xml:lang="tr">Desteklenen MSI GPU MUX modlarını inceleyin ve değiştirin</summary>
+  <description>
+    <p>A community Qt 6 tray application for the characterized MSI Vector 16 HX AI A2XWIG, MS-15M3, BIOS E15M3IMS.116. Hardware and firmware checks remain enforced by a privileged backend.</p>
+    <p>This Linux release candidate awaits a real firmware transition test. A successful staging operation requires saving work and performing a full shutdown manually.</p>
+    <p xml:lang="tr">MSI Vector 16 HX AI A2XWIG, MS-15M3 ve E15M3IMS.116 BIOS için topluluk tarafından geliştirilen Qt 6 sistem tepsisi uygulaması. Bu Linux sürüm adayında gerçek ürün yazılımı geçiş testi henüz tamamlanmamıştır.</p>
+  </description>
+  <launchable type="desktop-id">org.hayatboj.msimux.desktop</launchable>
+  <url type="homepage">https://github.com/hayatboj/msi-gpu-mux-switch</url>
+  <url type="bugtracker">https://github.com/hayatboj/msi-gpu-mux-switch/issues</url>
+  <provides><binary>msi-mux-tray</binary><binary>msi-mux-switch</binary></provides>
+  <content_rating type="oars-1.1"/>
+  <developer id="io.github.hayatboj"><name>MSI MUX community contributors</name></developer>
+</component>
