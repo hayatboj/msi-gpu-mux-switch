@@ -15,16 +15,6 @@ QString modeArgument(Mode mode) {
     return {};
 }
 
-QString modeToken(Mode mode) {
-    switch (mode) {
-    case Mode::Hybrid: return QStringLiteral("HYBRID");
-    case Mode::Discrete: return QStringLiteral("DISCRETE");
-    case Mode::Integrated: return QStringLiteral("INTEGRATED");
-    case Mode::Unknown: return {};
-    }
-    return {};
-}
-
 Mode parseMode(const QString &value) {
     if (value == QLatin1String("ms-hybrid")) return Mode::Hybrid;
     if (value == QLatin1String("discrete")) return Mode::Discrete;

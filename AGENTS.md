@@ -5,7 +5,7 @@
 This repository contains a Rust command-line utility that implements GPU MUX
 diagnostics and switching on Windows and Linux for the characterized MSI Vector
 16 HX AI A2XWIG. The known motherboard is MS-15M3 and the validated BIOS is
-E15M3IMS.116. Version 0.4.0 offers Hybrid, Discrete and Integrated as ordinary
+E15M3IMS.116. Version 0.5.0 offers Hybrid, Discrete and Integrated as ordinary
 desktop modes on that exact configuration. Three Hybrid/Discrete full
 shutdown/power-on transitions are recorded in `docs/VALIDATION.md`; the owner
 separately reported a successful Integrated hardware test. Do not invent that
@@ -73,8 +73,18 @@ Preserve these protections when changing the switching flow:
 
 - Gate writes to the exact model, board and BIOS. Do not provide write bypasses.
 - Require root on Linux or Administrator on Windows, and online AC power.
-- Require the mode-specific typed confirmation for human-readable interactive
-  switching. JSON mode deliberately skips this prompt for scripted use.
+- Desktop Apply saves a per-user local selection only. It must never invoke the
+  firmware helper. Only an explicit MSI MUX Restart/Power Off choice may commit
+  the final selection after fresh state validation; request desktop power only
+  after a verified successful result. Later, startup, logout and external launcher
+  requests must not commit. A desktop-menu restart does not apply the selection.
+- Keep local selections separate from firmware targets. Same-boot app reopening
+  may restore a valid selection; a changed boot or baseline invalidates it. A
+  committed or uncertain transaction cannot become an editable local selection.
+- The desktop uses a clearly named target and an explicit Apply/Cancel confirmation;
+  Cancel remains the default. Do not require a typed mode name in the desktop.
+  The human-readable CLI retains mode-specific typed confirmation; JSON mode
+  deliberately skips that prompt for scripted use.
 - Refuse to start when apply-ready is already asserted.
 - Persist transaction metadata before attempting firmware or ACPI writes.
 - Serialize access to the Linux debugfs ACPI transport across processes.
@@ -96,7 +106,7 @@ Preserve these protections when changing the switching flow:
 - Keep the GUI unprivileged. Invoke only the fixed installed Polkit helper.
 - Apply the same backend identity, capability, power and transaction checks to
   all three desktop modes. Launcher/IPC `--request-mode` requests must open the
-  normal typed confirmation flow and cannot authorize a firmware write.
+  normal explicit Apply confirmation flow and cannot authorize a firmware write.
 - GNOME uses the maintained AppIndicator adapter for the existing tray/menu.
   Desktop detection is a presentation hint, never a permission check. Do not
   install or enable Shell extensions automatically, or duplicate firmware
@@ -190,7 +200,7 @@ native GNOME session behavior; record that limitation explicitly.
 - Release scope is the exact documented model/board/BIOS. Preserve the
   distinction between the three captured Hybrid/Discrete transitions and the
   owner's Integrated success report. Historical 0.3.0 experimental-mode limits
-  are release history, not current 0.4.0 requirements. New hardware or protocol
+  are release history, not current mode requirements. New hardware or protocol
   changes need their own evidence; do not generalize existing results. CI cannot
   establish physical MUX behavior or warm-restart effectiveness.
 - Use synthetic fault injection to validate failure handling. Do not require or

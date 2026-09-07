@@ -1,5 +1,28 @@
 # Sürüm notları
 
+## 0.5.0 · 7 Eylül 2026
+
+### Güç işlemine kadar değiştirilebilir seçim
+
+- **Uygula** artık seçimi uygulamada kaydeder; donanıma henüz yazmaz. Yanlışlıkla
+  Entegre seçtiysen Hibrit'i seçip tekrar Uygula diyebilirsin.
+- Mod adı yazma gereği kaldırıldı. Hedef büyük gösterilir; **İptal** varsayılandır.
+- **Yeniden başlat / Bilgisayarı kapat** seçildiğinde son hedef yeni durum
+  okumasıyla kontrol edilir, donanıma bir kez uygulanır ve sonuç doğrulanır.
+  Yalnız başarıdan sonra seçtiğin güç işlemi masaüstüne iletilir.
+- **Daha sonra** donanım veya güç işlemi yapmaz. Seçim aynı açılışta uygulamayı
+  yeniden açınca korunur; seçimi iptal edebilir veya başka moda çevirebilirsin.
+- Geçerli mod, yerel seçim ve donanıma uygulanmış bekleyen hedef ayrı gösterilir.
+- Hakkında'daki desteklenen yapılandırma ve donanım testi paragrafı kaldırıldı.
+
+**Masaüstünün kendi menüsünden yeniden başlatmak seçimi uygulamaz.** Seçimi
+uygulamak için MSI MUX'un güç düğmelerini kullan. Yeni açılışta eski yerel seçim
+uygulanmış sayılmaz; geçersizleştirilir.
+
+Önceki sürümde donanıma zaten iletilmiş bekleyen istekler güç döngüsüne kadar
+kilitli kalır. Yeni yerel seçim akışı bu eski isteği geri almaz. Firmware motoru,
+işlem günlüğü ve yetkili yardımcı değiştirilmedi.
+
 ## 0.4.0 · 7 Eylül 2026
 
 ### Daha anlaşılır mod geçişleri

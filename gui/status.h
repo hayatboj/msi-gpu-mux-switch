@@ -7,7 +7,6 @@
 namespace Mux {
 enum class Mode { Unknown, Hybrid, Discrete, Integrated };
 QString modeArgument(Mode mode);
-QString modeToken(Mode mode);
 Mode parseMode(const QString &value);
 
 struct InternalDisplay {

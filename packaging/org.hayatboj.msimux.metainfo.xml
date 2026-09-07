@@ -10,10 +10,10 @@
     <p>A community Qt 6 tray application for the characterized MSI Vector 16 HX AI A2XWIG, MS-15M3, BIOS E15M3IMS.116. Hardware and firmware checks remain enforced by a privileged backend.</p>
     <p>Hybrid and Discrete have three captured hardware transitions after full shutdown and power-on. The owner separately reported Integrated hardware success, without a recorded transition direction or boot method. All three modes are ordinary choices on this exact model, board and BIOS.</p>
     <p>See current and requested modes separately, with mode colors, pending animation, optional reduced motion, and About, release notes and system details. KDE uses its native tray; GNOME can use the maintained AppIndicator adapter for the same menu.</p>
-    <p>After a successful request, explicitly choose Restart, Power Off or Later. Desktop confirmation and inhibitors remain in control; no power action is automatic. Warm-restart effectiveness and real firmware-failure recovery have not been verified. Full shutdown and power-on is the path established by the captured tests.</p>
+    <p>Apply saves a local selection. Use MSI MUX's Restart or Power Off buttons to apply the final selection to firmware; Later leaves hardware unchanged. Desktop confirmation and inhibitors remain in control; no power action is automatic. Warm-restart effectiveness and real firmware-failure recovery have not been verified. Full shutdown and power-on is the path established by the captured tests.</p>
     <p xml:lang="tr">MSI Vector 16 HX AI A2XWIG, MS-15M3 ve E15M3IMS.116 BIOS için topluluk tarafından geliştirilen Qt 6 uygulaması. Hibrit ve Ayrık için tam kapatıp açma sonrası üç donanım geçişi kaydedildi. Cihaz sahibi ayrıca Entegre donanım başarısı bildirdi; bu testin yönü ve açılış yöntemi kaydedilmedi. Üç mod da bu tam yapılandırmada normal seçeneklerdir.</p>
     <p xml:lang="tr">Geçerli ve istenen mod ayrı gösterilir. Mod renkleri, bekleme animasyonu, isteğe bağlı hareket azaltma, Hakkında, sürüm notları ve sistem ayrıntıları bulunur. GNOME, aynı tepsi menüsü için AppIndicator uyarlayıcısını kullanabilir.</p>
-    <p xml:lang="tr">Başarılı isteğin ardından Yeniden Başlat, Kapat veya Daha Sonra seçeneğini açıkça seçin. Masaüstünün onay ve engelleyici kontrolleri korunur; güç işlemi otomatik değildir. Yalnız yeniden başlatmanın yeterliliği ve gerçek firmware hatasından kurtarma doğrulanmamıştır. Kayıtlı testlerde tam kapatma ve yeniden açma kullanılmıştır.</p>
+    <p xml:lang="tr">Uygula yerel seçim kaydeder. Son seçimi donanıma uygulamak için MSI MUX içindeki Yeniden Başlat veya Kapat düğmesini kullanın; Daha Sonra donanımı değiştirmez. Masaüstünün onay ve engelleyici kontrolleri korunur; güç işlemi otomatik değildir. Yalnız yeniden başlatmanın yeterliliği ve gerçek firmware hatasından kurtarma doğrulanmamıştır. Kayıtlı testlerde tam kapatma ve yeniden açma kullanılmıştır.</p>
   </description>
   <launchable type="desktop-id">org.hayatboj.msimux.desktop</launchable>
   <url type="homepage">https://github.com/hayatboj/msi-gpu-mux-switch</url>
@@ -22,6 +22,14 @@
   <content_rating type="oars-1.1"/>
   <developer id="io.github.hayatboj"><name>MSI MUX community contributors</name></developer>
   <releases>
+    <release version="0.5.0" date="2026-09-07" type="stable">
+      <description>
+        <p>Apply now saves a local selection that can be changed or cancelled before using MSI MUX's power buttons. Restart or Shut down applies only the final choice after fresh checks and requests desktop power only after verification. The desktop's own restart menu does not apply a local selection.</p>
+        <p>Replaces typed mode names with Apply and Cancel. Distinguishes local selections from firmware-pending targets and simplifies About.</p>
+        <p xml:lang="tr">Uygula artık güç düğmesine basılana kadar değiştirilebilir yerel seçim kaydeder. Yeniden başlat veya Bilgisayarı kapat, son seçimi yeni durum kontrolünden sonra uygular; doğrulama başarılıysa güç işlemi ister. Masaüstünün kendi yeniden başlatma menüsü yerel seçimi uygulamaz.</p>
+        <p xml:lang="tr">Mod adı yazma yerine Uygula ve İptal eklendi. Yerel seçim ile donanıma uygulanmış bekleyen hedef ayrıldı; Hakkında sadeleştirildi.</p>
+      </description>
+    </release>
     <release version="0.4.0" date="2026-09-07" type="stable">
       <description>
         <p>Integrated joins Hybrid and Discrete as an ordinary mode following the owner's reported hardware success. Captured Hybrid/Discrete evidence remains separate.</p>

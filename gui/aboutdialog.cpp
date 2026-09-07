@@ -125,9 +125,6 @@ AboutDialog::AboutDialog(Language language, const Status &status, QWidget *paren
     aboutLayout->addLayout(links);
     aboutLayout->addSpacing(14);
     aboutLayout->addWidget(paragraph(about, t(
-        "Supported configuration: Vector 16 HX AI A2XWIG · MS-15M3 · BIOS E15M3IMS.116. Hybrid/Discrete were verified through three full power cycles; the device owner also reports a successful Integrated test.",
-        "Desteklenen yapılandırma: Vector 16 HX AI A2XWIG · MS-15M3 · BIOS E15M3IMS.116. Hibrit/Ayrık üç tam güç döngüsüyle doğrulandı; cihaz sahibi Entegre testinin de başarılı olduğunu bildirdi.")));
-    aboutLayout->addWidget(paragraph(about, t(
         "Based on steelbrain/msi-gpu-mux-switch. MIT license. Independent community project; not affiliated with MSI or NVIDIA.",
         "steelbrain/msi-gpu-mux-switch temel alınmıştır. MIT lisansı. Bağımsız topluluk projesidir; MSI veya NVIDIA ile bağlantılı değildir.")));
     auto *credits = new QHBoxLayout;

@@ -4,7 +4,7 @@
 
 Desteklenen MSI dizüstünde fiziksel GPU MUX modunu yöneten, Qt 6 ile geliştirilmiş masaüstü uygulaması. Geçerli modu görün, tepsi menüsünden başka bir mod seçin ve uygulamayı kapatmadan Türkçe/İngilizce arasında geçin. KDE kendi sistem tepsisini, GNOME ise aynı simge ve menü için AppIndicator desteğini kullanır.
 
-**0.4.0 sürümü, aşağıdaki tam yapılandırmada Hibrit, Ayrık ve Entegre modlarını normal seçenekler olarak sunar.** Linux üzerinde kaydı alınan **Hibrit → Ayrık → Hibrit → Ayrık** dizisindeki üç geçiş 7 Eylül 2026’da başarılı oldu. Her geçişten sonra elle tam kapatma ve yeniden açma yapıldı; **2560×1600, 240 Hz** korundu. Cihaz sahibi daha sonra Entegre donanım testinin de başarılı olduğunu bildirdi. Bu bildirim üç kayıtlı açılış gözleminden ayrıdır; Entegre testinin geçiş yönü ve açılış yöntemi kaydedilmemiştir. [Kanıtlar ve sınırları](docs/VALIDATION.md) doğrulama kaydında bulunuyor.
+**0.5.0 sürümünde Uygula yalnız yerel mod taslağını kaydeder. Masaüstü uygulaması firmware'i ancak MSI MUX içinden Yeniden Başlat veya Kapat seçtiğinizde değiştirir.** Aşağıdaki tam yapılandırmada Hibrit, Ayrık ve Entegre seçenekleri sunulur. Linux üzerinde kaydı alınan **Hibrit → Ayrık → Hibrit → Ayrık** dizisindeki üç geçiş 7 Eylül 2026’da başarılı oldu. Her geçişten sonra elle tam kapatma ve yeniden açma yapıldı; **2560×1600, 240 Hz** korundu. Cihaz sahibi daha sonra Entegre donanım testinin de başarılı olduğunu bildirdi. Bu bildirim üç kayıtlı açılış gözleminden ayrıdır; Entegre testinin geçiş yönü ve açılış yöntemi kaydedilmemiştir. [Kanıtlar ve sınırları](docs/VALIDATION.md) doğrulama kaydında bulunuyor.
 
 | Desteklenen yapılandırma | Değer |
 |---|---|
@@ -28,9 +28,19 @@ KDE'de sağ tıklamak menüyü, sol tıklamak durum penceresini açar. Ayrık k�
 
 Dil menüsünden **Türkçe** veya **English** seçilebilir. Oturum açıldığında başlatma ve hareketi azaltma tercihleri isteğe bağlıdır. Uygulama, tepsinin sonradan hazır olması dahil tepsi kullanılabilirliğini takip eder.
 
-Mod değiştirmek için adaptör bağlı olmalı; cihaz/BIOS eşleşmeli ve önceki işlem çözümlenmemiş durumda kalmamalı. Moda özel yazılı onayın ardından masaüstü yönetici kimlik doğrulaması ister. Arayüz yönetici olarak çalışmaz.
+Hedef modun adını kontrol edip **Uygula** düğmesine basın; arayüzde mod adı yazmak gerekmez. Bu aşama **yalnız yerel taslağı kaydeder**: yönetici yetkisi istemez, UEFI durumunu değiştirmez ve MSI ACPI çağrısı yapmaz. Firmware'e uygulamadan önce başka bir mod seçerek taslağı değiştirebilirsiniz. Taslağı iptal etmek veya mevcut modu seçmek taslağı temizler. **Daha Sonra**, taslağı saklar; firmware veya güç işlemi yapmaz.
 
-Başarılı isteğin ardından **Yeniden Başlat**, **Kapat** veya **Daha Sonra** seçenekleri sunulur. Güç işlemi yalnız açıkça seçtiğinizde, etkin masaüstünün normal oturum arayüzünden istenir. Masaüstü ayrıca onay sorabilir, işlemi engelleyen bir durum bildirebilir veya iptale izin verebilir; uygulama bunları atlayarak zorla kapatmaz.
+Hazır olduğunuzda çalışmalarınızı kaydedip **MSI MUX içindeki Yeniden Başlat veya Kapat** düğmesini seçin. Uygulama güncel durumu yeniden okur, son taslağı doğrular, yönetici kimlik doğrulaması ister ve sınırlı yardımcısını çağırır. Adaptör bağlı olmalı; cihaz/BIOS ve firmware eşleşmeli, önceki işlem çözümlenmemiş durumda kalmamalıdır. Yalnız doğrulanmış başarılı firmware sonucu alındıktan sonra seçtiğiniz normal masaüstü güç işlemi istenir. Firmware işlemi başarısız veya belirsizse güç isteği gönderilmez. Arayüz yönetici olarak çalışmaz.
+
+| Durum | Anlamı |
+|---|---|
+| Geçerli mod | Firmware'in bildirdiği moddur; dahili ekran bağlantısı ayrıca gösterilir. |
+| Yerel taslak | Bu açılış için değiştirilebilir seçiminizdir; kaydetmek firmware'i değiştirmez. |
+| Firmware'e uygulanmış bekleyen hedef | İşlem firmware'e zaten yazılmıştır; taslak gibi değiştirilemez veya iptal edilemez. |
+
+Aynı açılış sırasında MSI MUX'u kapatıp açmak taslağı geri getirir. **Masaüstünün kendi menüsünden yeniden başlatmak veya kapatmak taslağı uygulamaz.** Yeni açılışta önceki taslak geçersizleşir; uygulanmış olduğu varsayılmaz. Gerçek mevcut modu yeniden kontrol edin.
+
+Firmware uygulandıktan sonra masaüstü ayrıca onay sorabilir, işlemi engelleyen bir durum bildirebilir veya iptale izin verebilir. MSI MUX bunları atlayarak zorla kapatmaz. Masaüstü güç işlemi iptal edilirse firmware'de bekleyen hedef kalabilir; güç işlemini iptal etmek bunu geri almaz. Önceki uygulama sürümlerinden veya komut satırından kalan uygulanmış hedefler de değiştirilemez; yeni taslak akışı onları geri almaz.
 
 Önce çalışmalarınızı kaydedin. **Üç kayıtlı testte doğrulanan yöntem tam kapatma ve yeniden açmadır; yalnız yeniden başlatmanın MUX değişikliğine yeterli olduğu henüz doğrulanmamıştır.** Yeniden açıldıktan sonra mevcut modu ve dahili panelin GPU’sunu kontrol edin.
 
@@ -53,7 +63,7 @@ Kaynak derlemesi için Rust 1.88+, CMake, C++20 derleyicisi, Python 3 ve Qt 6 ge
 
 ```sh
 ./scripts/build-linux.sh
-./scripts/package-linux.sh 0.4.0
+./scripts/package-linux.sh 0.5.0
 ```
 
 Yayın paketleri yalnız `v*` etiketi gönderildiğinde veya yayın iş akışı elle başlatıldığında derlenir. Yayımlanması için sürüm etiketi eşleşmeli ve Linux ile Windows doğrulama/derleme işleri başarıyla tamamlanmalıdır.
@@ -74,7 +84,7 @@ msi-mux-switch --debug --json
 
 Uygulama sıradan durum kontrollerinde `nvidia-smi` çalıştırmaz. Değişiklik gerektiğinde yalnız sınırlı işlemleri kabul eden Polkit yardımcısını çağırır.
 
-Üç modun etkileşimli komut satırı geçişinde de moda özel onay metnini aynen yazmak gerekir. Betikler için `--json` yalnız bu yazılı onayı atlar; diğer güvenlik kontrollerini kaldırmaz ve cihaz/BIOS denetimini aşan bir seçenek sunmaz. Masaüstü `--request-mode` kısayolları normal arayüz onayını ister; betik geçiş yolunu kullanmaz.
+Komut satırı mevcut doğrudan uygulama akışını korur: moda özel yazılı onaydan sonra firmware işlemi yapar; masaüstü taslağı kaydetmez ve otomatik güç işlemi göndermez. Betikler için `--json` yalnız bu yazılı onayı atlar; diğer güvenlik kontrollerini kaldırmaz ve cihaz/BIOS denetimini aşan bir seçenek sunmaz. Masaüstü `--request-mode` kısayolları normal yerel taslak akışını açar; komut satırının uygulama yolunu kullanmaz ve güç işlemi yetkisi vermez.
 
 ## Sınırlar
 

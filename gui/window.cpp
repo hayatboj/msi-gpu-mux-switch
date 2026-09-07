@@ -15,7 +15,6 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
-#include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
 #include <QPlainTextEdit>
@@ -86,23 +85,25 @@ Window::Window(bool demo, Language language, bool trayEnabled, QWidget *parent)
     connect(&m_backend, &Backend::statusChanged, this, [this] {
         if (m_backend.status().valid) m_statusError.clear();
         updateUi();
+        if (m_powerAwaitingRefresh) {
+            QTimer::singleShot(0, this, &Window::finishPowerPreflight);
+        }
         if (m_requestedMode != Mode::Unknown) {
             const auto mode = m_requestedMode;
             m_requestedMode = Mode::Unknown;
             QTimer::singleShot(0, this, [this, mode] {
-                if (m_backend.canApplyMode(mode)) applyMode(mode);
+                if (m_backend.canSelectMode(mode)) applyMode(mode);
                 else showDetails(QStringLiteral("MSI MUX"), blockText(m_backend.status(), m_language).isEmpty() ?
                     t(Text::NoChanges) : blockText(m_backend.status(), m_language), m_lastDetails);
                 m_requestInFlight = false;
             });
         }
     });
+    connect(&m_backend, &Backend::draftChanged, this, &Window::updateUi);
     connect(&m_backend, &Backend::refreshingChanged, this, [this](bool) { updateUi(); });
     connect(&m_backend, &Backend::busyChanged, this, [this](bool busy) {
-        const bool visible = isVisible();
-        setWindowFlag(Qt::WindowCloseButtonHint, !busy);
-        if (visible || busy) showPanel();
         updateUi();
+        if (busy) showPanel();
     });
     connect(&m_backend, &Backend::statusError, this, [this](const QString &code, const QString &details) {
         m_statusError = code;
@@ -110,16 +111,20 @@ Window::Window(bool demo, Language language, bool trayEnabled, QWidget *parent)
         updateUi();
     });
     connect(&m_backend, &Backend::applyFinished, this, [this](bool success, bool cancelled, const QString &details) {
+        // A completion can authorize power only for the one explicit choice
+        // that initiated this commit. Clear it before invoking any other API.
+        const auto intent = m_committingDraft ? m_powerIntent : std::nullopt;
+        m_committingDraft = false;
+        m_powerIntent.reset();
         m_lastDetails = details;
         updateUi();
         showPanel();
-        const auto message = success ? t(m_backend.demo() ? Text::DemoApply : Text::ApplySuccess) :
-            t(cancelled ? Text::PermissionDenied : Text::ApplyUncertain);
-        if (success) {
-            m_tray.showMessage(QStringLiteral("MSI MUX"), message, QSystemTrayIcon::Information, 10000);
-            QTimer::singleShot(0, this, &Window::shutdown);
-        } else {
-            showDetails(t(Text::ApplyFailed), message, details);
+        const auto &status = m_backend.status();
+        if (success && intent && status.routinePending() &&
+            status.current == m_powerCurrent && status.target == m_powerDraft) {
+            m_powerActions.request(*intent);
+        } else if (!success) {
+            showDetails(t(Text::ApplyFailed), t(cancelled ? Text::PermissionDenied : Text::ApplyUncertain), details);
         }
     });
     connect(&m_powerActions, &PowerActions::busyChanged, this, [this](bool) { updateUi(); });
@@ -234,7 +239,14 @@ void Window::buildUi() {
     pendingLayout->addWidget(m_pendingDescription);
     m_shutdownButton = new QPushButton(m_pendingCard);
     m_shutdownButton->setObjectName(QStringLiteral("primary"));
-    pendingLayout->addWidget(m_shutdownButton, 0, Qt::AlignRight);
+    auto *pendingButtons = new QHBoxLayout;
+    m_clearDraftButton = new QPushButton(m_pendingCard);
+    m_clearDraftButton->setObjectName(QStringLiteral("clearDraft"));
+    pendingButtons->addWidget(m_clearDraftButton);
+    pendingButtons->addStretch();
+    pendingButtons->addWidget(m_shutdownButton);
+    pendingLayout->addLayout(pendingButtons);
+    connect(m_clearDraftButton, &QPushButton::clicked, this, &Window::clearDraft);
     connect(m_shutdownButton, &QPushButton::clicked, this, &Window::shutdown);
     layout->addWidget(m_pendingCard);
 
@@ -323,6 +335,7 @@ void Window::buildMenus() {
         connect(m_modeActions[index], &QAction::triggered, this, [this, index] { requestMode(modes[index]); });
     }
     m_shutdownAction = m_trayMenu->addAction(QString(), this, &Window::shutdown);
+    m_clearDraftAction = m_trayMenu->addAction(QString(), this, &Window::clearDraft);
     m_trayMenu->addSeparator();
     m_openAction = m_trayMenu->addAction(QString(), this, &Window::showPanel);
     m_refreshAction = m_trayMenu->addAction(QString(), &m_backend, &Backend::refresh);
@@ -381,11 +394,19 @@ QString Window::panelLabel() const {
 
 void Window::updateUi() {
     const auto &status = m_backend.status();
-    const bool busy = m_backend.busy();
+    const bool busy = interactionBusy();
+    const bool hasDraft = m_backend.hasDraft();
+    const Mode draft = m_backend.draftMode();
     const bool refreshing = m_backend.refreshing();
+    if (windowFlags().testFlag(Qt::WindowCloseButtonHint) == busy) {
+        const bool visible = isVisible();
+        setWindowFlag(Qt::WindowCloseButtonHint, !busy);
+        if (visible) showPanel();
+    }
     m_subtitle->setText(t(Text::Subtitle));
     m_demoLabel->setText(t(Text::Demo));
-    m_hero->setState(status, m_language, panelLabel(), busy);
+    const Mode visualDraft = hasDraft ? draft : m_committingDraft ? m_powerDraft : Mode::Unknown;
+    m_hero->setState(status, m_language, panelLabel(), busy, visualDraft);
     m_chooseLabel->setText(t(Text::SelectMode));
     QString reason = blockText(status, m_language);
     if (busy) reason = t(Text::Busy);
@@ -396,20 +417,24 @@ void Window::updateUi() {
     m_statusLabel->setVisible(!reason.isEmpty() && (!status.pendingShutdown || status.blockCode == QLatin1String("recovery_required")));
     m_statusLabel->setToolTip(m_lastDetails);
     const bool routinePending = status.routinePending();
-    m_pendingCard->setVisible(routinePending);
-    m_pendingTitle->setText(t(Text::PendingTitle));
-    m_pendingDescription->setText(t(Text::PendingDetail).arg(modeName(status.target, m_language)));
+    const bool powerAvailable = hasDraft ? status.canSwitch(draft) : routinePending;
+    m_pendingCard->setVisible(routinePending || hasDraft);
+    m_pendingTitle->setText(t(hasDraft ? Text::DraftTitle : Text::PendingTitle));
+    m_pendingDescription->setText(t(hasDraft ? Text::DraftDetail : Text::PendingDetail).arg(modeName(hasDraft ? draft : status.target, m_language)));
+    m_clearDraftButton->setText(t(Text::ClearDraft));
+    m_clearDraftButton->setVisible(hasDraft);
+    m_clearDraftButton->setEnabled(!busy);
     m_shutdownButton->setText(t(Text::PowerOptions));
-    m_shutdownButton->setVisible(routinePending);
-    m_shutdownButton->setEnabled(!busy && !m_powerActions.busy());
+    m_shutdownButton->setVisible(routinePending || hasDraft);
+    m_shutdownButton->setEnabled(powerAvailable && !busy && !refreshing);
     for (size_t index = 0; index < modes.size(); ++index) {
         const auto mode = modes[index];
         const bool active = status.current == mode;
-        const bool enabled = m_backend.canApplyMode(mode);
+        const bool enabled = !busy && m_backend.canSelectMode(mode);
         const auto name = modeName(mode, m_language);
         m_modeNames[index]->setText(name);
         m_modeDescriptions[index]->setText(t(descriptions[index]));
-        m_modeButtons[index]->setText(t(active ? Text::Active : routinePending && status.target == mode ? Text::Target : Text::Select));
+        m_modeButtons[index]->setText(t(hasDraft && draft == mode ? Text::DraftSelected : active ? Text::Active : routinePending && status.target == mode ? Text::Target : Text::Select));
         m_modeButtons[index]->setEnabled(enabled);
         m_modeButtons[index]->setAccessibleName(t(Text::ApplyTitle).arg(modeName(mode, m_language)));
         m_modeCards[index]->setProperty("active", active);
@@ -422,16 +447,16 @@ void Window::updateUi() {
     m_version->setText(t(Text::Version).arg(QCoreApplication::applicationVersion()));
     m_aboutButton->setText(t(Text::About));
     m_refreshButton->setText(t(refreshing ? Text::Refreshing : Text::Refresh));
-    m_refreshButton->setEnabled(!busy && !refreshing);
+    m_refreshButton->setEnabled(!busy && !refreshing && !m_powerDialogOpen && !m_confirming);
     m_preferencesButton->setToolTip(t(Text::Settings));
     m_preferencesButton->setAccessibleName(t(Text::Settings));
     m_preferencesMenu->setTitle(t(Text::Settings));
     m_currentAction->setText(t(Text::CurrentMode) + QStringLiteral(": ") + modeName(status.current, m_language));
-    m_pendingAction->setText(t(Text::PendingTitle) + QStringLiteral(" · ") + modeName(status.target, m_language));
-    m_pendingAction->setVisible(status.pendingShutdown);
+    m_pendingAction->setText(t(hasDraft ? Text::DraftTitle : Text::PendingTitle) + QStringLiteral(" · ") + modeName(hasDraft ? draft : status.target, m_language));
+    m_pendingAction->setVisible(status.pendingShutdown || hasDraft);
     m_openAction->setText(t(Text::Open));
     m_refreshAction->setText(t(Text::Refresh));
-    m_refreshAction->setEnabled(!busy && !refreshing);
+    m_refreshAction->setEnabled(!busy && !refreshing && !m_powerDialogOpen && !m_confirming);
     m_languageMenu->setTitle(t(Text::LanguageMenu));
     m_autostartAction->setText(t(Text::Autostart));
     m_reducedMotionAction->setText(t(Text::ReducedMotion));
@@ -444,19 +469,27 @@ void Window::updateUi() {
     m_quitAction->setText(t(Text::Quit));
     m_quitAction->setEnabled(!busy);
     m_shutdownAction->setText(t(Text::PowerOptions));
-    m_shutdownAction->setVisible(routinePending);
-    m_shutdownAction->setEnabled(!busy && !m_powerActions.busy());
+    m_shutdownAction->setVisible(routinePending || hasDraft);
+    m_shutdownAction->setEnabled(powerAvailable && !busy && !refreshing);
+    m_clearDraftAction->setText(t(Text::ClearDraft));
+    m_clearDraftAction->setVisible(hasDraft);
+    m_clearDraftAction->setEnabled(!busy);
     m_englishAction->setChecked(m_language == Language::English);
     m_turkishAction->setChecked(m_language == Language::Turkish);
     m_trButton->setChecked(m_language == Language::Turkish);
     m_enButton->setChecked(m_language == Language::English);
     m_tray.setToolTip(QStringLiteral("MSI MUX · %1%2").arg(modeName(status.current, m_language),
+        hasDraft ? QStringLiteral(" · ") + t(Text::DraftTitle) + QStringLiteral(": ") + modeName(draft, m_language) :
         status.pendingShutdown ? QStringLiteral(" → ") + modeName(status.target, m_language) : QString()));
     m_tray.setIcon(modeTrayIcon(windowIcon(), status.current, status.pendingShutdown));
 }
 
 void Window::applyMode(Mode mode) {
-    if (m_confirming || !m_backend.canApplyMode(mode)) return;
+    if (m_confirming || m_infoDialogOpen || interactionBusy() || !m_backend.canSelectMode(mode)) return;
+    if (mode == m_backend.status().current && m_backend.hasDraft()) {
+        clearDraft();
+        return;
+    }
     QScopedValueRollback<bool> confirming(m_confirming, true);
     showPanel();
     QDialog dialog(this);
@@ -465,58 +498,71 @@ void Window::applyMode(Mode mode) {
     auto *layout = new QVBoxLayout(&dialog);
     layout->setContentsMargins(24, 22, 24, 22);
     layout->setSpacing(15);
+    auto *targetCaption = label(&dialog, QStringLiteral("caption"));
+    targetCaption->setText(t(Text::Target).toUpper());
+    layout->addWidget(targetCaption);
+    auto *target = label(&dialog, QStringLiteral("confirmationTarget"));
+    target->setText(modeName(mode, m_language));
+    target->setStyleSheet(QStringLiteral("font-size:28px; font-weight:750; background:transparent;"));
+    layout->addWidget(target);
     auto *description = label(&dialog, {}, true);
     description->setText(t(Text::ApplyDescription).arg(modeName(mode, m_language)));
     layout->addWidget(description);
     auto *risk = label(&dialog, QStringLiteral("muted"), true);
     risk->setText(m_backend.demo() ? t(Text::Demo) : t(Text::ApplyRisk));
     layout->addWidget(risk);
-    auto *tokenLabel = label(&dialog);
-    tokenLabel->setText(t(Text::TypeToken).arg(modeToken(mode)));
-    auto *input = new QLineEdit(&dialog);
-    input->setAccessibleName(tokenLabel->text());
-    input->setPlaceholderText(modeToken(mode));
-    tokenLabel->setBuddy(input);
-    layout->addWidget(tokenLabel);
-    layout->addWidget(input);
     auto *buttons = new QDialogButtonBox(&dialog);
     auto *cancel = buttons->addButton(t(Text::Cancel), QDialogButtonBox::RejectRole);
     auto *apply = buttons->addButton(t(Text::ConfirmApply), QDialogButtonBox::AcceptRole);
     apply->setObjectName(QStringLiteral("primary"));
-    apply->setEnabled(false);
+    apply->setAutoDefault(false);
+    apply->setDefault(false);
+    cancel->setAutoDefault(true);
     cancel->setDefault(true);
+    cancel->setFocus(Qt::OtherFocusReason);
     layout->addWidget(buttons);
-    connect(input, &QLineEdit::textChanged, &dialog, [apply, mode](const QString &value) {
-        apply->setEnabled(value == modeToken(mode));
-    });
     connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-    input->setFocus();
+    QTimer::singleShot(0, &dialog, [cancel] {
+        cancel->setDefault(true);
+        cancel->setFocus(Qt::OtherFocusReason);
+    });
     m_refreshTimer.stop();
-    const bool accepted = dialog.exec() == QDialog::Accepted && input->text() == modeToken(mode);
+    const bool accepted = dialog.exec() == QDialog::Accepted;
     m_refreshTimer.start();
-    if (accepted) m_backend.apply(mode);
+    if (accepted) {
+        if (m_backend.selectMode(mode)) {
+            updateUi();
+            if (m_backend.hasDraft()) QTimer::singleShot(0, this, &Window::shutdown);
+        } else {
+            showDetails(t(Text::Error), t(Text::DraftSaveFailed), m_backend.draftError());
+        }
+    }
 }
 
 void Window::shutdown() {
     const auto &status = m_backend.status();
-    if (m_powerDialogOpen || m_confirming || m_backend.busy() || m_powerActions.busy() ||
-        !status.routinePending()) return;
+    const bool hasDraft = m_backend.hasDraft();
+    if (m_powerDialogOpen || m_confirming || m_infoDialogOpen || interactionBusy() || m_backend.refreshing() ||
+        (hasDraft ? !status.canSwitch(m_backend.draftMode()) : !status.routinePending())) return;
     QScopedValueRollback<bool> open(m_powerDialogOpen, true);
     const Mode confirmedCurrent = status.current;
     const Mode confirmedTarget = status.target;
+    const Mode confirmedDraft = m_backend.draftMode();
+    const Mode selectedTarget = hasDraft ? confirmedDraft : confirmedTarget;
     showPanel();
+    updateUi();
     QDialog dialog(this);
-    dialog.setWindowTitle(t(Text::PowerSuccessTitle));
+    dialog.setWindowTitle(t(hasDraft ? Text::DraftPowerTitle : Text::PowerSuccessTitle));
     dialog.setMinimumWidth(520);
     auto *layout = new QVBoxLayout(&dialog);
     layout->setContentsMargins(24, 22, 24, 22);
     layout->setSpacing(15);
     auto *title = label(&dialog, QStringLiteral("modeName"), true);
-    title->setText(modeName(status.current, m_language) + QStringLiteral(" → ") + modeName(status.target, m_language));
+    title->setText(modeName(status.current, m_language) + QStringLiteral(" → ") + modeName(selectedTarget, m_language));
     layout->addWidget(title);
     auto *description = label(&dialog, {}, true);
-    description->setText(t(Text::PowerSuccessDetail).arg(modeName(status.current, m_language), modeName(status.target, m_language)));
+    description->setText(t(hasDraft ? Text::DraftPowerDetail : Text::PowerSuccessDetail).arg(modeName(status.current, m_language), modeName(selectedTarget, m_language)));
     layout->addWidget(description);
     auto *restartNote = label(&dialog, QStringLiteral("muted"), true);
     restartNote->setText(m_backend.demo() ? t(Text::PowerRequestDemo) : t(Text::RestartUnverified));
@@ -543,23 +589,82 @@ void Window::shutdown() {
         later->setDefault(true);
         later->setFocus(Qt::OtherFocusReason);
     });
+    m_refreshTimer.stop();
     const int choice = dialog.exec();
-    // A new recovery condition or another transaction may have appeared while
-    // the user read the dialog. Recheck before sending a desktop request.
+    m_refreshTimer.start();
+    m_powerDialogOpen = false;
+    updateUi();
+    if (choice != 2 && choice != 3) return;
+    // Selecting a power option is the only authorization to commit a draft.
+    // Reject a replaced/cleared selection or changed firmware snapshot, then
+    // obtain a new read before either committing or requesting desktop power.
     const auto &latest = m_backend.status();
-    if (!latest.routinePending() || m_backend.busy() || latest.current != confirmedCurrent || latest.target != confirmedTarget) return;
-    if (choice == 2) m_powerActions.request(PowerAction::Restart);
-    else if (choice == 3) m_powerActions.request(PowerAction::PowerOff);
+    if (interactionBusy() || m_backend.refreshing() || latest.current != confirmedCurrent || latest.target != confirmedTarget ||
+        m_backend.hasDraft() != hasDraft || m_backend.draftMode() != confirmedDraft ||
+        (hasDraft ? !latest.canSwitch(confirmedDraft) : !latest.routinePending())) return;
+    m_powerIntent = choice == 2 ? PowerAction::Restart : PowerAction::PowerOff;
+    m_powerCurrent = confirmedCurrent;
+    m_powerTarget = confirmedTarget;
+    m_powerDraft = confirmedDraft;
+    m_powerAwaitingRefresh = true;
+    updateUi();
+    m_backend.refresh();
+}
+
+void Window::finishPowerPreflight() {
+    if (!m_powerAwaitingRefresh) return;
+    m_powerAwaitingRefresh = false;
+    const auto &status = m_backend.status();
+    const bool hasDraft = m_powerDraft != Mode::Unknown;
+    const bool matches = status.valid && !m_backend.busy() && !m_powerActions.busy() &&
+        !m_infoDialogOpen && !m_confirming && !m_powerDialogOpen &&
+        status.current == m_powerCurrent && status.target == m_powerTarget &&
+        m_backend.hasDraft() == hasDraft && m_backend.draftMode() == m_powerDraft;
+    if (!matches || !m_powerIntent || (hasDraft ? !status.canSwitch(m_powerDraft) : !status.routinePending())) {
+        m_powerIntent.reset();
+        updateUi();
+        return;
+    }
+    if (hasDraft) {
+        m_committingDraft = true;
+        updateUi();
+        if (!m_backend.commitDraft()) {
+            m_committingDraft = false;
+            m_powerIntent.reset();
+            updateUi();
+        }
+    } else {
+        const auto action = *m_powerIntent;
+        m_powerIntent.reset();
+        updateUi();
+        m_powerActions.request(action);
+    }
+}
+
+bool Window::interactionBusy() const {
+    return firmwareOperationBusy() || m_powerActions.busy();
+}
+
+bool Window::firmwareOperationBusy() const {
+    return m_backend.busy() || m_powerAwaitingRefresh || m_committingDraft;
+}
+
+void Window::clearDraft() {
+    if (interactionBusy() || m_confirming || m_powerDialogOpen || m_infoDialogOpen || !m_backend.hasDraft()) return;
+    if (!m_backend.clearDraft()) showDetails(t(Text::Error), t(Text::DraftSaveFailed), m_backend.draftError());
+    updateUi();
 }
 
 void Window::showAbout(bool changes) {
-    if (m_infoDialogOpen || m_confirming || m_powerDialogOpen) return;
+    if (m_infoDialogOpen || m_confirming || m_powerDialogOpen || interactionBusy()) return;
     QScopedValueRollback<bool> open(m_infoDialogOpen, true);
     AboutDialog dialog(m_language, m_backend.status(), this, changes);
     dialog.exec();
 }
 
 void Window::showDetails(const QString &title, const QString &message, const QString &details) {
+    if (m_infoDialogOpen) return;
+    QScopedValueRollback<bool> open(m_infoDialogOpen, true);
     QMessageBox box(QMessageBox::Warning, title, message, QMessageBox::NoButton, this);
     box.setTextFormat(Qt::PlainText);
     box.addButton(t(Text::Close), QMessageBox::AcceptRole);
@@ -614,7 +719,7 @@ void Window::setReducedMotion(bool enabled) {
 void Window::requestMode(Mode mode) {
     showPanel();
     if (mode == Mode::Unknown || m_requestInFlight || m_confirming || m_powerDialogOpen ||
-        m_infoDialogOpen || m_backend.busy() || m_powerActions.busy()) return;
+        m_infoDialogOpen || interactionBusy()) return;
     m_requestInFlight = true;
     m_requestedMode = mode;
     // Status is a read-only probe. The signal handler opens one confirmation
@@ -629,13 +734,13 @@ void Window::showPanel() {
 }
 
 void Window::requestQuit() {
-    if (m_backend.busy()) { showPanel(); return; }
+    if (interactionBusy()) { showPanel(); return; }
     m_quitting = true;
     qApp->quit();
 }
 
 void Window::closeEvent(QCloseEvent *event) {
-    if (m_backend.busy()) { event->ignore(); return; }
+    if (firmwareOperationBusy()) { event->ignore(); return; }
     if (hasTray() && !m_quitting) {
         hide();
         event->ignore();

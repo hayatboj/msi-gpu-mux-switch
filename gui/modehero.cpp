@@ -163,28 +163,38 @@ ModeHero::ModeHero(QWidget *parent) : QWidget(parent) {
     layout->addLayout(bottom);
     m_frames.setInterval(42);
     connect(&m_frames, &QTimer::timeout, this, [this] {
-        if (!m_pending && m_elapsed.elapsed() > 6500) m_frames.stop();
+        if (!m_pending && m_draft == Mode::Unknown && m_elapsed.elapsed() > 6500) m_frames.stop();
         update();
     });
     m_elapsed.start();
 }
 
-void ModeHero::setState(const Status &status, Language language, const QString &panel, bool busy) {
+void ModeHero::setState(const Status &status, Language language, const QString &panel, bool busy, Mode draft) {
     const Mode current = status.valid ? status.current : Mode::Unknown;
     const Mode target = status.valid ? status.target : Mode::Unknown;
     const bool pending = status.routinePending();
-    const bool changed = current != m_current || target != m_target || pending != m_pending;
+    const bool local = status.valid && status.expectedHardware && status.newSwitchSupported &&
+        status.bios == QLatin1String("E15M3IMS.116") && status.blockCode != QLatin1String("recovery_required") &&
+        status.firmwareAvailable && status.firmwareValid &&
+        !status.pendingShutdown && current != Mode::Unknown && current == target && draft != current &&
+        (draft == Mode::Hybrid || (draft == Mode::Discrete && status.discreteSupported) ||
+         (draft == Mode::Integrated && status.integratedSupported));
+    const Mode selected = local ? draft : Mode::Unknown;
+    const bool transition = pending || local;
+    const Mode destination = local ? selected : target;
+    const bool changed = current != m_current || target != m_target || pending != m_pending || selected != m_draft;
     m_current = current;
     m_target = target;
     m_pending = pending;
+    m_draft = selected;
     if (changed) m_elapsed.restart();
-    m_caption->setText(Mux::tr(pending ? Text::CurrentToTarget : Text::CurrentMode, language));
-    m_title->setStyleSheet(QStringLiteral("color:#fffaf4; font-size:%1px; font-weight:750; background:transparent;").arg(pending ? 30 : 38));
-    m_title->setText(pending ? modeName(current, language) + QStringLiteral(" → ") + modeName(target, language) : modeName(current, language));
+    m_caption->setText(Mux::tr(local ? Text::CurrentToSelection : pending ? Text::CurrentToTarget : Text::CurrentMode, language));
+    m_title->setStyleSheet(QStringLiteral("color:#fffaf4; font-size:%1px; font-weight:750; background:transparent;").arg(transition ? 30 : 38));
+    m_title->setText(transition ? modeName(current, language) + QStringLiteral(" → ") + modeName(destination, language) : modeName(current, language));
     Text description = current == Mode::Discrete ? Text::DiscreteDescription : current == Mode::Integrated ?
         Text::IntegratedDescription : current == Mode::Hybrid ? Text::HybridDescription : Text::Reading;
-    m_description->setText(pending ? Mux::tr(Text::HeroPendingDetail, language).arg(modeName(current, language), modeName(target, language)) : Mux::tr(description, language));
-    m_badge->setText(Mux::tr(busy ? Text::Applying : pending ? Text::PowerCyclePending : Text::LiveMode, language));
+    m_description->setText(transition ? Mux::tr(local ? Text::HeroDraftDetail : Text::HeroPendingDetail, language).arg(modeName(current, language), modeName(destination, language)) : Mux::tr(description, language));
+    m_badge->setText(Mux::tr(busy ? Text::Applying : local ? Text::SelectionSaved : pending ? Text::PowerCyclePending : Text::LiveMode, language));
     m_panel->setText(Mux::tr(Text::InternalPanel, language) + QStringLiteral(" · ") + panel);
     m_power->setText(Mux::tr(status.valid ? (status.acPower ? Text::AcConnected : Text::Battery) : Text::Unknown, language));
     setAccessibleName(m_caption->text() + QStringLiteral(": ") + m_title->text());
@@ -202,7 +212,7 @@ void ModeHero::setReducedMotion(bool enabled) {
 QString ModeHero::titleText() const { return m_title->text(); }
 
 void ModeHero::updateAnimation() {
-    if (isVisible() && !window()->isMinimized() && !m_reducedMotion && (m_pending || m_elapsed.elapsed() < 6500) && m_current != Mode::Unknown) {
+    if (isVisible() && !window()->isMinimized() && !m_reducedMotion && (m_pending || m_draft != Mode::Unknown || m_elapsed.elapsed() < 6500) && m_current != Mode::Unknown) {
         if (!m_frames.isActive()) m_frames.start();
     } else {
         m_frames.stop();
@@ -223,26 +233,28 @@ void ModeHero::paintEvent(QPaintEvent *) {
     clip.addRoundedRect(QRectF(rect()), 19, 19);
     painter.setClipPath(clip);
     const double phase = !m_reducedMotion && m_frames.isActive() ? qMax(0.001, m_elapsed.elapsed() / 1000.0) : 0.0;
+    const bool transition = m_pending || m_draft != Mode::Unknown;
+    const Mode destination = m_draft != Mode::Unknown ? m_draft : m_target;
     const QColor from = baseColor(m_current);
-    const QColor to = baseColor(m_pending ? m_target : m_current);
+    const QColor to = baseColor(transition ? destination : m_current);
     QLinearGradient gradient(QPointF(0, 0), QPointF(width(), height() * 0.7));
     gradient.setColorAt(0, from);
     gradient.setColorAt(1, to.darker(190));
-    if (m_pending) {
+    if (transition) {
         gradient.setColorAt(0.42 + std::sin(phase * 0.6) * 0.09, from.darker(120));
         gradient.setColorAt(0.72 + std::sin(phase * 0.6) * 0.07, to);
     }
     painter.fillRect(rect(), gradient);
     QRadialGradient glow(QPointF(width() - 62, 95), width() * 0.58);
-    const QColor accent = accentColor(m_pending ? m_target : m_current);
+    const QColor accent = accentColor(transition ? destination : m_current);
     glow.setColorAt(0, QColor(accent.red(), accent.green(), accent.blue(), 43));
     glow.setColorAt(1, QColor(accent.red(), accent.green(), accent.blue(), 0));
     painter.fillRect(rect(), glow);
     painter.setPen(QPen(QColor(255, 255, 255, 22), 1));
     painter.drawLine(QPointF(25, height() - 55), QPointF(width() - 25, height() - 55));
     const QRectF symbol(width() - 158, 73, 122, 133);
-    drawSymbol(painter, m_pending ? m_target : m_current, symbol, accent, phase);
-    if (m_pending) {
+    drawSymbol(painter, transition ? destination : m_current, symbol, accent, phase);
+    if (transition) {
         // The small source symbol and arrow preserve direction for every pair.
         drawSymbol(painter, m_current, QRectF(width() - 184, 162, 41, 41), accentColor(m_current), 0);
         painter.setPen(QPen(QColor(255, 247, 236, 165), 1.5, Qt::SolidLine, Qt::RoundCap));

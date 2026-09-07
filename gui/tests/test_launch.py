@@ -16,7 +16,7 @@ class LaunchTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         root = Path(self.directory.name)
         self.env = dict(os.environ, QT_QPA_PLATFORM="offscreen", XDG_CONFIG_HOME=str(root / "config"),
-                        XDG_RUNTIME_DIR=str(root), DBUS_SESSION_BUS_ADDRESS="unix:path=/nonexistent",
+                        XDG_RUNTIME_DIR=str(root), XDG_DATA_HOME=str(root / "data"), DBUS_SESSION_BUS_ADDRESS="unix:path=/nonexistent",
                         XDG_CURRENT_DESKTOP="")
         root.chmod(0o700)
 
@@ -26,9 +26,11 @@ class LaunchTests(unittest.TestCase):
 
     def test_rejects_invalid_and_non_demo_preview_options(self):
         for arguments in [("--request-mode", "invalid"), ("--demo-mode", "discrete"),
-                          ("--demo-target", "integrated"), ("--screenshot", "/nonexistent/out.png"),
+                          ("--demo-target", "integrated"), ("--demo-selection", "integrated"), ("--screenshot", "/nonexistent/out.png"),
                           ("--screenshot-page", "about"),
                           ("--demo", "--demo-mode", "invalid"),
+                          ("--demo", "--demo-selection", "invalid"),
+                          ("--demo", "--demo-target", "discrete", "--demo-selection", "integrated", "--screenshot", "unused.png"),
                           ("--demo", "--screenshot", "unused.png", "--request-mode", "discrete")]:
             with self.subTest(arguments=arguments):
                 self.assertEqual(self.run_app(*arguments).returncode, 2)
@@ -45,6 +47,16 @@ class LaunchTests(unittest.TestCase):
                     self.assertTrue(path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"))
                     self.assertGreater(path.stat().st_size, 10000)
         self.assertFalse((Path(self.directory.name) / "config/hayatboj/MSI MUX.conf").exists())
+
+    def test_local_selection_preview_does_not_persist_or_apply(self):
+        for language in ("en", "tr"):
+            with self.subTest(language=language):
+                path = Path(self.directory.name) / f"{language}-selection.png"
+                result = self.run_app("--demo", "--language", language, "--demo-selection", "integrated",
+                                      "--screenshot", str(path))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue(path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"))
+        self.assertFalse(list(Path(self.directory.name).rglob("selection.json")))
 
 
 if __name__ == "__main__":

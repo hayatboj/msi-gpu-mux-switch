@@ -54,6 +54,7 @@ int main(int argc, char *argv[]) {
     parser.addOption({QStringLiteral("screenshot"), QStringLiteral("Save demo screenshot and exit (requires --demo) / Demo ekran görüntüsü kaydet"), QStringLiteral("path")});
     parser.addOption({QStringLiteral("request-mode"), QStringLiteral("Open mode confirmation: mshybrid, discrete, integrated / Mod onayını aç"), QStringLiteral("mode")});
     parser.addOption({QStringLiteral("demo-mode"), QStringLiteral("Synthetic current mode (requires --demo)"), QStringLiteral("mode")});
+    parser.addOption({QStringLiteral("demo-selection"), QStringLiteral("Synthetic local selection (requires --demo)"), QStringLiteral("mode")});
     parser.addOption({QStringLiteral("demo-target"), QStringLiteral("Synthetic target mode (requires --demo)"), QStringLiteral("mode")});
     parser.addOption({QStringLiteral("screenshot-page"), QStringLiteral("Demo screenshot page: main, about, changes"), QStringLiteral("page"), QStringLiteral("main")});
     parser.process(app);
@@ -61,13 +62,13 @@ int main(int argc, char *argv[]) {
     const auto parseArgumentMode = [](const QString &value) {
         return value == QLatin1String("mshybrid") || value == QLatin1String("hybrid") ? Mux::Mode::Hybrid : Mux::parseMode(value);
     };
-    for (const auto &option : {QStringLiteral("request-mode"), QStringLiteral("demo-mode"), QStringLiteral("demo-target")}) {
+    for (const auto &option : {QStringLiteral("request-mode"), QStringLiteral("demo-mode"), QStringLiteral("demo-target"), QStringLiteral("demo-selection")}) {
         if (parser.isSet(option) && parseArgumentMode(parser.value(option)) == Mux::Mode::Unknown) {
             std::fputs("Mode must be mshybrid, discrete or integrated / Geçersiz mod\n", stderr);
             return 2;
         }
     }
-    if ((!demo && (parser.isSet(QStringLiteral("demo-mode")) || parser.isSet(QStringLiteral("demo-target")))) ||
+    if ((!demo && (parser.isSet(QStringLiteral("demo-mode")) || parser.isSet(QStringLiteral("demo-target")) || parser.isSet(QStringLiteral("demo-selection")))) ||
         (parser.isSet(QStringLiteral("screenshot-page")) && !parser.isSet(QStringLiteral("screenshot")))) {
         std::fputs("Synthetic preview options require --demo and screenshot pages require --screenshot\n", stderr);
         return 2;
@@ -128,17 +129,22 @@ int main(int argc, char *argv[]) {
     }
 
     Mux::Window window(demo, language, !parser.isSet(QStringLiteral("screenshot")));
-    if (demo && (parser.isSet(QStringLiteral("demo-mode")) || parser.isSet(QStringLiteral("demo-target")))) {
+    if (demo && (parser.isSet(QStringLiteral("demo-mode")) || parser.isSet(QStringLiteral("demo-target")) || parser.isSet(QStringLiteral("demo-selection")))) {
         const auto current = parser.isSet(QStringLiteral("demo-mode")) ? parseArgumentMode(parser.value(QStringLiteral("demo-mode"))) : Mux::Mode::Hybrid;
         const auto target = parser.isSet(QStringLiteral("demo-target")) ? parseArgumentMode(parser.value(QStringLiteral("demo-target"))) : current;
         window.backend()->setDemoModes(current, target);
     }
-    app.firmwareBusy = [&window] { return window.backend()->busy(); };
+    if (parser.isSet(QStringLiteral("demo-selection")) &&
+        !window.backend()->selectMode(parseArgumentMode(parser.value(QStringLiteral("demo-selection"))))) {
+        std::fputs("The local selection requires a clear synthetic hardware state / Yerel seçim için bekleyen donanım işlemi olmamalı\n", stderr);
+        return 2;
+    }
+    app.firmwareBusy = [&window] { return window.firmwareOperationBusy(); };
     QObject::connect(&app, &QGuiApplication::commitDataRequest, &window, [&window](QSessionManager &session) {
-        if (window.backend()->busy()) session.cancel();
+        if (window.firmwareOperationBusy()) session.cancel();
     });
     QObject::connect(&app, &QGuiApplication::saveStateRequest, &window, [&window](QSessionManager &session) {
-        if (window.backend()->busy()) session.cancel();
+        if (window.firmwareOperationBusy()) session.cancel();
     });
     const auto activeClients = std::make_shared<int>(0);
     QObject::connect(&server, &QLocalServer::newConnection, &window, [&, activeClients] {

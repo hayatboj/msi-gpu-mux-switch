@@ -14,7 +14,7 @@ enum class Text {
     Autostart, Settings, Ready, Reading, BackendMissing, StatusFailed,
     FirmwareUnavailable, UnsupportedHardware, UnsupportedBios, UnknownMode,
     AcRequired, PendingBlock, Busy, ApplyTitle, ApplyDescription,
-    ApplyRisk, TypeToken, ConfirmApply, Cancel, Applying, ApplySuccess,
+    ApplyRisk, ConfirmApply, Cancel, Applying, ApplySuccess,
     ApplyFailed, ApplyUncertain, Details, Close, ShutdownTitle, ShutdownConfirm,
     ShutdownFailed, DemoApply, Error, AutostartFailed, AlreadyRunning,
     Version, NoPanel, Disabled, PermissionDenied, InvalidResponse,
@@ -22,7 +22,9 @@ enum class Text {
     About, WhatsNew, ReducedMotion, CurrentToTarget, HeroPendingDetail, PowerCyclePending,
     LiveMode, PowerOptions, PowerSuccessTitle, PowerSuccessDetail, Restart, RestartUnverified,
     Later, PowerRequestSent, PowerRequestCancelled, PowerRequestDenied, PowerRequestUnavailable,
-    PowerRequestFailed, PowerRequestDemo, Target, GnomeSetup, GnomeSetupDetail, Count
+    PowerRequestFailed, PowerRequestDemo, Target, GnomeSetup, GnomeSetupDetail,
+    DraftTitle, DraftDetail, DraftSelected, ClearDraft, DraftPowerTitle, DraftPowerDetail,
+    DraftSaveFailed, CurrentToSelection, HeroDraftDetail, SelectionSaved, Count
 };
 QString tr(Text key, Language language);
 QString modeName(Mode mode, Language language);

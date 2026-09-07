@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-07
+
+### Changed
+
+- Desktop **Apply** now saves a local selection without firmware access. Change
+  that selection as often as needed before choosing a power action in MSI MUX.
+- Removed typed desktop mode names; the selected target is prominent and Cancel
+  remains the default. The human-readable CLI keeps its existing confirmation.
+- MSI MUX's **Restart / Shut down** choices verify fresh hardware state, apply
+  only the final selection once, verify the result, and then request the selected
+  normal desktop power action. Cancellation, failure or a changed state sends no
+  power request. Later saves no firmware change.
+- Local selections and firmware-pending targets have distinct labels and status;
+  a local selection never appears to be the physical current mode or a firmware
+  target. Mode colors and all six directional gradients remain.
+- Local selections can be replaced, cancelled, or restored after reopening the
+  app in the same boot. A new boot or changed hardware baseline invalidates them.
+- Removed the supported-configuration and hardware-test paragraph from About.
+  GitHub/profile links, credits and optional System diagnostics remain.
+
+### Behavior to know
+
+- Restarting from the desktop's own menu does **not** apply a local selection;
+  use MSI MUX's power buttons to apply it first. Nothing runs automatically at
+  boot or logout to commit a selection.
+- An older request already acknowledged by firmware remains immutable until a
+  power cycle. The local-selection workflow does not undo or replace it. The
+  characterized firmware engine, transaction journal and helper are unchanged.
+
 ## [0.4.0] - 2026-09-07
 
 ### Added

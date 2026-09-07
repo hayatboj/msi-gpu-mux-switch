@@ -4,7 +4,7 @@
 
 A native Qt 6 application for controlling the GPU MUX on a supported MSI laptop. See the current graphics mode, choose a mode from the desktop tray, and switch between English and Turkish without restarting the application. KDE uses its system tray; GNOME can show the same indicator and menu through AppIndicator support.
 
-**Version 0.4.0 offers Hybrid, Discrete and Integrated as ordinary mode choices on the exact configuration below.** Three captured Linux transitions—**MSHybrid → Discrete → MSHybrid → Discrete**—succeeded on 2026-09-07 after manual full shutdowns and power-ons, retaining **2560×1600 at 240 Hz**. The device owner subsequently reported a successful Integrated hardware test. That report is separate from the three recorded post-boot observations: its transition direction and boot method were not recorded. See the [evidence and its limits](docs/VALIDATION.md).
+**In version 0.5.0, Apply saves a local mode draft. The desktop app changes firmware only when you explicitly choose Restart or Power Off inside MSI MUX.** Hybrid, Discrete and Integrated are available on the exact configuration below. Three captured Linux transitions—**MSHybrid → Discrete → MSHybrid → Discrete**—succeeded on 2026-09-07 after manual full shutdowns and power-ons, retaining **2560×1600 at 240 Hz**. The device owner subsequently reported a successful Integrated hardware test. That report is separate from the three recorded post-boot observations: its transition direction and boot method were not recorded. See the [evidence and its limits](docs/VALIDATION.md).
 
 | Supported configuration | Value |
 |---|---|
@@ -20,7 +20,7 @@ Other MSI laptops and BIOS versions are not enabled by the desktop application. 
 
 ## Features
 
-- Current firmware mode and requested next mode shown separately.
+- Current firmware mode, editable local draft and firmware-pending target shown as distinct states.
 - Hybrid, Discrete and Integrated choices when supported by the firmware and safety checks.
 - Red Discrete, amber Hybrid and teal Integrated visuals, with animated pending feedback and an optional reduced-motion preference.
 - About, What's new and System information, including the actual GPU driving the internal panel.
@@ -28,7 +28,8 @@ Other MSI laptops and BIOS versions are not enabled by the desktop application. 
 - Polkit authorization through a narrowly scoped helper; the GUI never runs as root.
 - Read-only polling without MSI ACPI calls or `nvidia-smi` GPU wakeups.
 - Serialized firmware transactions and durable transaction metadata.
-- Explicit mode confirmation, then Restart, Power Off or Later choices after a successful request; no automatic power action.
+- Apply saves or replaces a local draft; Later performs no firmware or power operation.
+- MSI MUX's explicit Restart/Power Off choice verifies and applies the latest draft before requesting the normal desktop power action.
 
 This changes the hardware graphics mode. PRIME render offload selects the GPU used by an application and is a different operation.
 
@@ -36,9 +37,19 @@ This changes the hardware graphics mode. PRIME render offload selects the GPU us
 
 Open **MSI MUX** from the application launcher. Open the tray icon's menu to see the current mode and choose an available mode. On KDE, right-click opens the menu and left-click opens the window. The language menu switches between **English** and **Türkçe**. Startup at login and reduced motion are optional. **About** contains release notes and system details, keeping the main window focused on mode selection.
 
-All three modes use the same confirmation and hardware checks. The indicator distinguishes the current mode from the requested target; a pending animation does not mean the physical display connection has already changed.
+For any of the three modes, check the large target name and click **Apply**; no mode name needs to be typed in the desktop. This saves a **local draft only**: it does not request administrator authorization, write UEFI state or invoke MSI ACPI. You can replace that draft with another mode before committing it. Canceling the draft or selecting the current mode clears it. **Later** keeps the draft and sends no firmware or power request.
 
-Switching requires AC power, matching hardware/BIOS, readable firmware state, and no unresolved previous transaction. After a successful request, choose **Restart**, **Power Off**, or **Later**. A power action is sent only after your explicit choice, through the active desktop's normal session interface. The desktop may ask for confirmation, report an inhibitor, or allow cancellation; MSI MUX does not force the action or bypass that handling.
+When ready, save your work and choose **Restart** or **Power Off inside MSI MUX**. The application reads fresh status, checks the latest draft, requests administrator authentication and invokes its restricted helper. Switching still requires AC power, matching hardware/BIOS, valid firmware state and no unresolved previous transaction. Only a verified successful helper result allows the selected normal desktop power request. A failed or uncertain firmware operation sends no power request.
+
+| State | Meaning |
+|---|---|
+| Current mode | The mode reported by firmware; the internal display route is shown separately. |
+| Local draft | Your editable choice for this boot; firmware has not been changed by saving it. |
+| Firmware-pending target | A transaction has already been applied to firmware; it cannot be replaced or canceled as a draft. |
+
+Closing and reopening MSI MUX during the same boot restores the local draft. **Restarting or shutting down from the desktop's own menu does not apply it.** A draft from an earlier boot is discarded, without assuming that its mode was applied. Always check the actual current mode after boot.
+
+The desktop may ask for confirmation, report an inhibitor or allow cancellation after a successful firmware apply. MSI MUX does not force the power action or bypass that handling. If the desktop cancels, firmware may already have a pending target; canceling the desktop power request does not undo it. Existing pending transactions from earlier application versions or the CLI remain protected from retargeting. The new draft workflow does not roll them back.
 
 Save your work before choosing a power action. **A full shutdown and power-on is the path demonstrated by the three captured tests; warm-restart effectiveness has not been established.** After starting again, verify both the reported current mode and the internal display's GPU. On this laptop, Discrete mode disables display output through the Intel-wired Thunderbolt ports; HDMI is wired to NVIDIA.
 
@@ -63,7 +74,7 @@ Development dependencies: Rust 1.88+, CMake, a C++20 compiler, Python 3, and Qt 
 
 ```sh
 ./scripts/build-linux.sh
-./scripts/package-linux.sh 0.4.0
+./scripts/package-linux.sh 0.5.0
 ```
 
 Arch packaging is in [`packaging/`](packaging/). The running kernel needs the MSI WMI platform driver for detailed diagnostics and mode changes.
@@ -94,7 +105,7 @@ msi-mux-switch --debug --json
 
 A successful diagnostic is not proof that physical switching or recovery has succeeded.
 
-Human-readable CLI switching requires the mode-specific typed confirmation for all three modes. `--json` is intended for scripts and skips that prompt only; it retains all backend safety checks and provides no hardware or BIOS override. Desktop `--request-mode` actions request the normal GUI confirmation; they do not use the scripted switching path.
+The CLI keeps its immediate-apply behavior: a mode command applies firmware after its mode-specific typed confirmation, rather than saving a desktop draft. It never powers off or restarts automatically. `--json` is intended for scripts and skips that prompt only; it retains all backend safety checks and provides no hardware or BIOS override. Desktop `--request-mode` actions open the normal local-draft flow; they do not use the CLI apply path or authorize power actions.
 
 ## Development
 

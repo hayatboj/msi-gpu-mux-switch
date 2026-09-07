@@ -2,8 +2,9 @@
 
 MSI MUX uses its existing Qt tray and menu on GNOME through **AppIndicator and
 KStatusNotifierItem Support**. The adapter displays the same mode badge, current
-mode, pending target and mode menu used on KDE. It does not gain permission to
-change firmware: selecting a mode opens MSI MUX's confirmation flow. The
+mode, local draft or firmware-pending state, and mode menu used on KDE. It does
+not gain permission to change firmware: selecting a mode opens MSI MUX's
+local-draft flow. The
 [adapter's upstream documentation](https://github.com/ubuntu/gnome-shell-extension-appindicator)
 describes panel icons and their menus.
 The normal location is GNOME's top bar; user-installed panel extensions may
@@ -30,26 +31,37 @@ Qt supports Linux desktops offering the StatusNotifierItem interface and
 Without a tray host, MSI MUX keeps its normal window available. Opening MSI MUX
 again brings the existing window forward.
 
-The panel menu's mode selections require the same typed confirmation and
-administrator authentication as the application window. Version 0.4.0 offers
-Integrated alongside Hybrid and Discrete, based on the owner's report of a
-successful Integrated hardware test. Every mode request still passes the
-backend's model, BIOS, power and transaction checks.
+In version 0.5.0, **Apply saves a local draft only**, just as in the application
+window. It does not request administrator authorization or change firmware.
+Selecting another mode replaces the draft; canceling it or selecting the current
+mode clears it. Later sends no firmware or power request. Integrated remains an
+ordinary choice alongside Hybrid and Discrete, based on the owner's report of a
+successful hardware test.
 
-After a successful request, explicitly choose Restart, Power Off or Later. A
-power action is sent only after that choice, through the active desktop's normal
-session interface. GNOME may then show its own confirmation or inhibitor dialog
-and allow cancellation; one application click is not a guarantee of a restart.
-MSI MUX never forces the action. Full shutdown and power-on is the method in the
-three captured Hybrid/Discrete tests; warm-restart effectiveness is unverified.
+To commit the latest draft, save your work and explicitly choose **Restart or
+Power Off inside MSI MUX**. Fresh status and the backend's model, BIOS, power and
+transaction checks must pass. The application requests helper authorization,
+applies firmware, and requires verified success before sending the selected
+normal desktop power request. A failed or uncertain apply sends no power request.
+GNOME may then show its own confirmation or inhibitor dialog and allow
+cancellation; one application click is not a guarantee of a restart. MSI MUX
+never forces the action.
+
+Restarting or shutting down from GNOME's own menu does **not** apply a local
+draft. Reopening MSI MUX in the same boot restores a valid draft; after a new
+boot the old draft is invalidated, without assuming it was applied. An already
+committed firmware-pending target cannot be changed as a draft, and canceling a
+GNOME power dialog does not undo it. Full shutdown and power-on is the method
+in the three captured Hybrid/Discrete tests; warm-restart effectiveness remains
+unverified.
 
 The installed desktop launcher also offers Hybrid, Discrete and Integrated request actions
-in launchers that support desktop actions. These open confirmation in MSI MUX;
+in launchers that support desktop actions. These open the local-draft flow in MSI MUX;
 they do not apply a mode directly. Their fixed `--request-mode mshybrid`,
 `--request-mode discrete` and `--request-mode integrated` arguments are handled by the unprivileged GUI, including
-when an existing application instance receives the request. Fresh status and
-the normal confirmation are still required; these requests never call the
-privileged helper directly or authorize a later power action. The
+when an existing application instance receives the request. Saving a draft
+through this route never calls the privileged helper or authorizes a later
+commit/power action. The
 [desktop action specification](https://specifications.freedesktop.org/desktop-entry/latest/extra-actions.html)
 allows launchers to expose these additional entries. Launcher support varies.
 
@@ -73,11 +85,12 @@ have **not** been verified here. KDE validation and physical Hybrid/Discrete
 validation do not establish GNOME session compatibility. Do not rely on a tray
 tooltip or notification alone; open the menu or window to read the full status.
 
-For a GNOME session check, record the Shell and adapter versions, confirm the
-current mode and pending target match the application window, and check that
-Hybrid/Discrete selections open confirmation and cancellation changes nothing.
-Verify the missing-adapter window fallback and later adapter availability. These
-interface checks do not require a firmware transition.
+For a GNOME session check, record the Shell and adapter versions and confirm
+that current mode, local draft and firmware-pending status match the application
+window. Check that saving, replacing or canceling a draft and choosing Later
+request neither authorization nor power. Verify the missing-adapter window
+fallback and later adapter availability. These interface checks do not require
+committing a draft or performing a firmware transition.
 
 ## Türkçe
 
@@ -94,18 +107,27 @@ oturumu kapatıp açın. MSI MUX eklenti ayarlarınızı değiştirmez ve oturum
 kapatmaz. Sonraki oturumlarda otomatik çalışması için uygulamanın isteğe bağlı
 **Oturum açıldığında başlat** tercihini etkinleştirin.
 
-Paneldeki mod seçimleri uygulamanın mevcut onay penceresini açar. Yazılı onay ve
-yönetici kimlik doğrulaması gerekir. 0.4.0 sürümünde Entegre, cihaz sahibinin
-başarılı donanım testi bildirimine dayanarak Hibrit ve Ayrık yanında normal
-seçenektir. Başlatıcının üç moda yönelik kısayolları da aynı onay akışını kullanır;
-doğrudan firmware işlemi yapmaz.
+0.5.0 sürümünde panelden veya başlatıcı kısayolundan açılan **Uygula** işlemi
+yalnız yerel taslağı kaydeder. Yönetici yetkisi istemez ve firmware'i değiştirmez.
+Başka bir mod seçmek taslağı değiştirir; taslağı iptal etmek veya mevcut modu
+seçmek temizler. **Daha Sonra** firmware veya güç işlemi yapmaz. Entegre, cihaz
+sahibinin başarılı donanım testi bildirimine dayanarak Hibrit ve Ayrık yanında
+normal seçenektir.
 
-Başarılı isteğin ardından Yeniden Başlat, Kapat veya Daha Sonra seçeneğini açıkça
-seçersiniz. GNOME ayrıca onay veya engelleyici durum penceresi gösterebilir ve
-iptale izin verebilir; tek tıklama yeniden başlatmanın gerçekleştiği anlamına
-gelmez. Uygulama güç işlemini zorlamaz. Üç kayıtlı Hibrit/Ayrık testinde tam
-kapatma ve yeniden açma kullanılmıştır; yalnız yeniden başlatmanın yeterli
-olduğu henüz doğrulanmamıştır.
+Son taslağı uygulamak için çalışmalarınızı kaydedip **MSI MUX içindeki Yeniden
+Başlat veya Kapat** seçeneğini açıkça seçin. Güncel durum ve donanım kontrolleri
+yenilenir; yönetici kimlik doğrulamasıyla firmware işlemi yapılır. Yalnız
+doğrulanmış başarıdan sonra normal masaüstü güç isteği gönderilir. Firmware
+işlemi başarısız veya belirsizse güç isteği gönderilmez. GNOME ayrıca onay veya
+engelleyici durum penceresi gösterebilir ve iptale izin verebilir; uygulama güç
+işlemini zorlamaz.
+
+GNOME'un kendi menüsünden yeniden başlatmak veya kapatmak taslağı uygulamaz.
+Aynı açılışta MSI MUX'u kapatıp açmak taslağı geri getirir; yeni açılışta eski
+taslak geçersizleşir ve uygulanmış sayılmaz. Firmware'e zaten uygulanmış bekleyen
+hedef taslak gibi değiştirilemez. GNOME güç penceresini iptal etmek de onu geri
+almaz. Üç kayıtlı Hibrit/Ayrık testinde tam kapatma ve yeniden açma kullanılmıştır;
+yalnız yeniden başlatmanın yeterli olduğu henüz doğrulanmamıştır.
 
 Geliştirme bilgisayarında GNOME Shell bulunmadığından gerçek GNOME oturumu,
 eklenti menüsü ve GNOME bildirimleri bu projede test edilmemiştir. 2026-09-07
