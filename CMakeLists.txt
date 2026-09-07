@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(msi-mux VERSION 0.3.0 LANGUAGES CXX)
+project(msi-mux VERSION 0.4.0 LANGUAGES CXX)
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
   message(FATAL_ERROR "The KDE tray and privileged helper are Linux-only. Build the Windows CLI with Cargo.")

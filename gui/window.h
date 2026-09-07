@@ -1,6 +1,7 @@
 #pragma once
 
 #include "backend.h"
+#include "poweractions.h"
 #include "translations.h"
 #include <QMainWindow>
 #include <QSettings>
@@ -16,11 +17,13 @@ class QToolButton;
 class QFrame;
 
 namespace Mux {
+class ModeHero;
 class Window final : public QMainWindow {
     Q_OBJECT
 public:
     Window(bool demo, Language language, bool trayEnabled = true, QWidget *parent = nullptr);
     void showPanel();
+    void requestMode(Mode mode);
     bool hasTray() const { return m_tray.isVisible() && QSystemTrayIcon::isSystemTrayAvailable(); }
     Backend *backend() { return &m_backend; }
 
@@ -28,20 +31,23 @@ protected:
     void closeEvent(QCloseEvent *event) override;
 
 private:
+    friend class UiTests;
     void buildUi();
     void buildMenus();
     void updateUi();
     void applyMode(Mode mode);
     void shutdown();
+    void showAbout(bool changes = false);
     void showDetails(const QString &title, const QString &message, const QString &details);
     void setLanguage(Language language);
     void setAutostart(bool enabled);
-    void setExperimentalIntegrated(bool enabled);
+    void setReducedMotion(bool enabled);
     void requestQuit();
     QString t(Text text) const { return Mux::tr(text, m_language); }
     QString panelLabel() const;
 
     Backend m_backend;
+    PowerActions m_powerActions;
     Language m_language;
     QSettings m_settings;
     QSystemTrayIcon m_tray;
@@ -54,33 +60,25 @@ private:
     QAction *m_openAction = nullptr;
     QAction *m_refreshAction = nullptr;
     QAction *m_autostartAction = nullptr;
-    QAction *m_experimentalIntegratedAction = nullptr;
+    QAction *m_reducedMotionAction = nullptr;
+    QAction *m_aboutAction = nullptr;
+    QAction *m_whatsNewAction = nullptr;
+    QAction *m_gnomeSetupAction = nullptr;
     QAction *m_quitAction = nullptr;
     QAction *m_englishAction = nullptr;
     QAction *m_turkishAction = nullptr;
     QAction *m_shutdownAction = nullptr;
     QLabel *m_subtitle = nullptr;
     QLabel *m_demoLabel = nullptr;
-    QLabel *m_currentCaption = nullptr;
-    QLabel *m_modeLabel = nullptr;
-    QLabel *m_modeDescription = nullptr;
-    QLabel *m_panelCaption = nullptr;
-    QLabel *m_panelValue = nullptr;
-    QLabel *m_powerLabel = nullptr;
+    ModeHero *m_hero = nullptr;
     QLabel *m_statusLabel = nullptr;
     QLabel *m_chooseLabel = nullptr;
     QLabel *m_pendingTitle = nullptr;
     QLabel *m_pendingDescription = nullptr;
     QFrame *m_pendingCard = nullptr;
     QPushButton *m_shutdownButton = nullptr;
-    QLabel *m_deviceCaption = nullptr;
-    QLabel *m_deviceValue = nullptr;
-    QLabel *m_biosCaption = nullptr;
-    QLabel *m_biosValue = nullptr;
-    QLabel *m_compatibilityLabel = nullptr;
-    QLabel *m_experimentalTitle = nullptr;
-    QLabel *m_experimentalDetail = nullptr;
     QLabel *m_version = nullptr;
+    QPushButton *m_aboutButton = nullptr;
     QPushButton *m_refreshButton = nullptr;
     QToolButton *m_preferencesButton = nullptr;
     QToolButton *m_enButton = nullptr;
@@ -92,8 +90,13 @@ private:
     std::array<QAction *, 3> m_modeActions{};
     QString m_statusError;
     QString m_lastDetails;
-    bool m_successfulApply = false;
     bool m_quitting = false;
     bool m_trayEnabled = true;
+    bool m_reducedMotion = false;
+    Mode m_requestedMode = Mode::Unknown;
+    bool m_requestInFlight = false;
+    bool m_confirming = false;
+    bool m_powerDialogOpen = false;
+    bool m_infoDialogOpen = false;
 };
 }

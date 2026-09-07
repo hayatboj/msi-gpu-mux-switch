@@ -98,13 +98,23 @@ void Backend::finishProbe(int exitCode, QProcess::ExitStatus exitStatus) {
 }
 
 bool Backend::canApplyMode(Mode mode) const {
-    return (mode != Mode::Integrated || m_experimentalIntegratedEnabled) &&
-        m_status.canSwitch(mode, m_applying) && !refreshing();
+    return m_status.canSwitch(mode, m_applying) && !refreshing();
+}
+
+bool Backend::setDemoModes(Mode current, Mode target) {
+    if (!m_demo || m_applying || current == Mode::Unknown || target == Mode::Unknown) return false;
+    m_status = Status::demo();
+    m_status.current = current;
+    m_status.target = target;
+    m_status.pendingShutdown = current != target;
+    m_status.displays[0].vendor = current == Mode::Discrete ? QStringLiteral("NVIDIA") : QStringLiteral("Intel");
+    m_status.displays[0].driver = current == Mode::Discrete ? QStringLiteral("nvidia") : QStringLiteral("i915");
+    emit statusChanged();
+    return true;
 }
 
 void Backend::apply(Mode mode) {
-    // Keep the opt-in at the execution boundary, including calls that bypass a
-    // disabled button or race a preference change while confirmation is open.
+    // Check the live UI safety gates again at the execution boundary.
     if (!canApplyMode(mode)) return;
     m_requested = mode;
     m_applying = true;

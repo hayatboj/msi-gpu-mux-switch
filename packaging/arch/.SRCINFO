@@ -1,6 +1,6 @@
 pkgbase = msi-mux
 	pkgdesc = MSI GPU MUX CLI and Qt 6 tray for validated Vector 16 HX AI hardware
-	pkgver = 0.3.0
+	pkgver = 0.4.0
 	pkgrel = 1
 	url = https://github.com/hayatboj/msi-gpu-mux-switch
 	arch = x86_64
@@ -16,7 +16,7 @@ pkgbase = msi-mux
 	depends = polkit
 	depends = gcc-libs
 	depends = glibc
-	source = msi-gpu-mux-switch::git+https://github.com/hayatboj/msi-gpu-mux-switch.git#tag=v0.3.0
+	source = msi-gpu-mux-switch::git+https://github.com/hayatboj/msi-gpu-mux-switch.git#tag=v0.4.0
 	sha256sums = SKIP
 
 pkgname = msi-mux

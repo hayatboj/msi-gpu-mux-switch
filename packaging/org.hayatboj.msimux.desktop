@@ -4,10 +4,27 @@ Name=MSI MUX
 Name[tr]=MSI MUX
 Comment=Inspect and switch the GPU display path on supported MSI laptops
 Comment[tr]=Desteklenen MSI dizüstülerde GPU ekran bağlantısını inceleyin ve değiştirin
-Exec=msi-mux-tray
+Exec=/usr/bin/msi-mux-tray
+TryExec=/usr/bin/msi-mux-tray
 Icon=org.hayatboj.msimux
 Terminal=false
 Categories=Settings;HardwareSettings;
 Keywords=MSI;GPU;MUX;NVIDIA;Optimus;
 StartupNotify=false
 DBusActivatable=false
+Actions=Hybrid;Discrete;Integrated;
+
+[Desktop Action Hybrid]
+Name=Switch to Hybrid…
+Name[tr]=Hibrit moda geç…
+Exec=/usr/bin/msi-mux-tray --request-mode mshybrid
+
+[Desktop Action Discrete]
+Name=Switch to Discrete…
+Name[tr]=Ayrık moda geç…
+Exec=/usr/bin/msi-mux-tray --request-mode discrete
+
+[Desktop Action Integrated]
+Name=Switch to Integrated…
+Name[tr]=Entegre moda geç…
+Exec=/usr/bin/msi-mux-tray --request-mode integrated

@@ -5,10 +5,12 @@
 This repository contains a Rust command-line utility that implements GPU MUX
 diagnostics and switching on Windows and Linux for the characterized MSI Vector
 16 HX AI A2XWIG. The known motherboard is MS-15M3 and the validated BIOS is
-E15M3IMS.116. Stable version 0.3.0 covers the verified Hybrid/Discrete desktop
-workflow on that exact configuration. Three full shutdown/power-on transitions
-are recorded in `docs/VALIDATION.md`. Integrated remains experimental and
-requires explicit desktop settings opt-in; capability bits alone do not validate it.
+E15M3IMS.116. Version 0.4.0 offers Hybrid, Discrete and Integrated as ordinary
+desktop modes on that exact configuration. Three Hybrid/Discrete full
+shutdown/power-on transitions are recorded in `docs/VALIDATION.md`; the owner
+separately reported a successful Integrated hardware test. Do not invent that
+test's transition direction, boot method, application build, or post-boot capture.
+Capability bits alone do not establish physical success.
 
 On Linux, UEFI access uses efivarfs and MSI ACPI access uses only the in-tree
 `msi-wmi-platform` driver's root-only debugfs interface. Do not add a direct AML
@@ -28,7 +30,8 @@ ambiguous state.
 - `src/transaction.rs` contains the tested transaction state machine, durable
   journal, uncertain-completion handling, and target restoration.
 - `src/bin/msi-mux-switch.rs` contains CLI parsing, reporting and confirmation.
-- `gui/` contains the Qt 6 tray/status window, translations and tests.
+- `gui/` contains the Qt 6 tray/status window, About/release notes, desktop
+  integration, session power requests, translations and tests.
 - `packaging/` contains the privileged helper, Polkit policy, desktop metadata,
   Arch package, and validated installer/uninstaller.
 - `scripts/` contains native build and bundle creation entry points.
@@ -80,13 +83,24 @@ Preserve these protections when changing the switching flow:
 - Restore the previous target when a post-write step fails, then verify the
   restoration. Report restoration failures without hiding the original error.
 - Warn prominently when a trigger was sent before a later failure.
-- Never automatically reboot or shut down the user's machine. A successful
-  transition must instruct the user to save work and perform a full shutdown.
+- Never automatically reboot or shut down the user's machine. Only an explicit
+  user choice may request Restart or Power Off through the active desktop's
+  normal session interface, preserving its confirmation, inhibitors and
+  cancellation. Do not force power actions, call direct logind power methods,
+  or try a fallback after rejection or an uncertain reply. Offer Later as well.
+  Full shutdown/power-on is the recorded hardware path; warm-restart
+  effectiveness remains unverified. Keep current mode and requested target
+  distinct until fresh post-boot observation.
 - Keep routine `--status` polling unprivileged and free of ACPI calls.
 - A target restoration is not a guarantee of full hardware rollback.
 - Keep the GUI unprivileged. Invoke only the fixed installed Polkit helper.
-- Keep experimental Integrated mode disabled by default in the desktop. Opt-in
-  must not bypass backend identity, capability, power, or transaction checks.
+- Apply the same backend identity, capability, power and transaction checks to
+  all three desktop modes. Launcher/IPC `--request-mode` requests must open the
+  normal typed confirmation flow and cannot authorize a firmware write.
+- GNOME uses the maintained AppIndicator adapter for the existing tray/menu.
+  Desktop detection is a presentation hint, never a permission check. Do not
+  install or enable Shell extensions automatically, or duplicate firmware
+  control inside a Shell extension.
 
 Keep probes and tests that can mutate firmware opt-in and separate from the
 normal unit-test suite. Never exercise real firmware writes merely to validate
@@ -155,7 +169,10 @@ handled explicitly. Review the human and JSON paths together.
 
 For Linux integration, run `scripts/build-linux.sh` and
 `scripts/package-linux.sh`. Check both UI languages using the inert `--demo`
-mode. Never switch a real MUX or shut down the host as an automated test.
+mode. Never switch a real MUX, request administrator access, or send real
+desktop power actions as an automated test. Use injected power transports.
+Synthetic desktop detection and StatusNotifierItem tests do not establish
+native GNOME session behavior; record that limitation explicitly.
 
 ## CI and releases
 
@@ -170,10 +187,12 @@ mode. Never switch a real MUX or shut down the host as an automated test.
   The workflow does not create the tag.
 - Linux archives contain the tray, backend, restricted helper, desktop metadata,
   validated installer/uninstaller and checksums. Windows archives retain the CLI.
-- Stable release scope is the documented Hybrid/Discrete workflow on the exact
-  tested model/board/BIOS. Keep Integrated experimental and opt-in until separately
-  validated. New hardware or protocol changes need their own evidence; do not
-  generalize the existing result. CI cannot establish physical MUX behavior.
+- Release scope is the exact documented model/board/BIOS. Preserve the
+  distinction between the three captured Hybrid/Discrete transitions and the
+  owner's Integrated success report. Historical 0.3.0 experimental-mode limits
+  are release history, not current 0.4.0 requirements. New hardware or protocol
+  changes need their own evidence; do not generalize existing results. CI cannot
+  establish physical MUX behavior or warm-restart effectiveness.
 - Use synthetic fault injection to validate failure handling. Do not require or
   intentionally cause real firmware failure as a stable-release gate. Recovery
   limits must remain explicit even for a stable release.

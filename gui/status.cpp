@@ -44,6 +44,11 @@ bool Status::canSwitch(Mode mode, bool busy) const {
     return false;
 }
 
+bool Status::routinePending() const {
+    return valid && firmwareAvailable && firmwareValid && current != Mode::Unknown &&
+        target != Mode::Unknown && pendingShutdown && blockCode != QLatin1String("recovery_required");
+}
+
 Status Status::parse(const QByteArray &json) {
     Status result;
     if (json.size() > 1024 * 1024) { result.error = QStringLiteral("response_too_large"); return result; }

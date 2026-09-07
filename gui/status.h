@@ -40,6 +40,7 @@ struct Status {
     QVector<InternalDisplay> displays;
 
     bool canSwitch(Mode mode, bool busy = false) const;
+    bool routinePending() const;
     static Status parse(const QByteArray &json);
     static Status demo();
 };

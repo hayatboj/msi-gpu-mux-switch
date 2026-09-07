@@ -1,1 +1,7 @@
-<RCC><qresource prefix="/icons"><file alias="msi-mux.svg">icons/msi-mux.svg</file></qresource></RCC>
+<RCC>
+  <qresource prefix="/icons"><file alias="msi-mux.svg">icons/msi-mux.svg</file></qresource>
+  <qresource prefix="/docs">
+    <file alias="CHANGELOG.md">../CHANGELOG.md</file>
+    <file alias="release-notes.tr.md">release-notes.tr.md</file>
+  </qresource>
+</RCC>

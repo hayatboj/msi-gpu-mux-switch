@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-07
+
+### Added
+
+- Animated graphics-mode hero: red Discrete, amber Hybrid, teal Integrated;
+  pending mode changes display both current and requested modes immediately.
+- Directional current-to-target gradients and mode illustrations, including a
+  rocket for Discrete, with reduced-motion controls and hidden-window suspension.
+- About dialog with hayatboj's GitHub profile, project links, credits, embedded
+  release notes in English/Turkish, and a user-copyable system summary.
+- Explicit Restart, Power off and Later choices after a successful mode request,
+  using the active KDE/GNOME session manager and retaining desktop cancellation.
+- GNOME tray setup guidance through maintained AppIndicator support and desktop
+  launcher actions that open the existing guarded mode-confirmation dialog.
+- Synthetic mode/target previews for testing each pending transition without
+  firmware or power operations.
+
+### Changed
+
+- Integrated is now available as an ordinary mode after the device owner reported
+  a successful real test. The exact model/board/BIOS and capability gates remain.
+- Moved hardware validation information from the main window to About.
+- Current physical mode remains visible until a new boot verifies activation;
+  a requested mode never masquerades as an already active GPU connection.
+- Power controls remain available for a valid pending transaction after reopening
+  the app. No automatic shutdown, countdown, forced session exit or power action.
+
+### Validation limits
+
+- The owner's Integrated result is distinct from the three recorded Hybrid/Discrete
+  post-boot captures. No additional firmware transition was run for this UI release.
+- A normal reboot's MUX activation is not established by those full-power-cycle tests.
+  The power dialog retains the complete shutdown option and explains that limit.
+- GNOME uses the existing StatusNotifierItem protocol through AppIndicator; a
+  native GNOME session was not available on the reference KDE host.
+
 ## [0.3.0] - 2026-09-07
 
 ### Added
@@ -90,7 +126,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Embedded Windows manifest requesting Administrator privileges.
 - Windows CI, release archives, SHA-256 checksums, and tagged GitHub Releases.
 
-[Unreleased]: https://github.com/hayatboj/msi-gpu-mux-switch/compare/v0.3.0...linux-kde
+[Unreleased]: https://github.com/hayatboj/msi-gpu-mux-switch/compare/v0.4.0...linux-kde
+[0.4.0]: https://github.com/hayatboj/msi-gpu-mux-switch/releases/tag/v0.4.0
 [0.3.0]: https://github.com/hayatboj/msi-gpu-mux-switch/releases/tag/v0.3.0
 [0.3.0-rc.1]: https://github.com/hayatboj/msi-gpu-mux-switch/releases/tag/v0.3.0-rc.1
 [0.2.0]: https://github.com/steelbrain/msi-gpu-mux-switch/compare/v0.1.0...v0.2.0

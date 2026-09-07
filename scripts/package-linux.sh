@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-version=${1:-0.3.0}
+version=${1:-0.4.0}
 build_dir=${2:-"$source_dir/build-linux"}
 output_dir=${3:-"$source_dir/dist"}
 if (( $# > 3 )); then

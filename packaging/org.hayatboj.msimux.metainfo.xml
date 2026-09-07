@@ -8,10 +8,12 @@
   <summary xml:lang="tr">Desteklenen MSI GPU MUX modlarını inceleyin ve değiştirin</summary>
   <description>
     <p>A community Qt 6 tray application for the characterized MSI Vector 16 HX AI A2XWIG, MS-15M3, BIOS E15M3IMS.116. Hardware and firmware checks remain enforced by a privileged backend.</p>
-    <p>Hybrid and Discrete transitions have been physically verified on this exact model, board and BIOS, including the active internal display connection after a manual full shutdown and power-on. Save your work and perform a full shutdown manually after a successful request.</p>
-    <p>Integrated mode remains unvalidated and experimental, and is disabled by default in the tray. Failure recovery has not been physically tested.</p>
-    <p xml:lang="tr">MSI Vector 16 HX AI A2XWIG, MS-15M3 ve E15M3IMS.116 BIOS için topluluk tarafından geliştirilen Qt 6 sistem tepsisi uygulaması. Hybrid ve Discrete arasındaki geçişler, elle tam kapatıp açma sonrasında dahili ekran bağlantısı kontrol edilerek bu donanımda doğrulanmıştır. Başarılı bir isteğin ardından çalışmalarınızı kaydedip bilgisayarı elle tamamen kapatın.</p>
-    <p xml:lang="tr">Integrated modu doğrulanmamıştır, deneyseldir ve sistem tepsisi uygulamasında varsayılan olarak devre dışıdır. Hata sonrası kurtarma fiziksel olarak test edilmemiştir.</p>
+    <p>Hybrid and Discrete have three captured hardware transitions after full shutdown and power-on. The owner separately reported Integrated hardware success, without a recorded transition direction or boot method. All three modes are ordinary choices on this exact model, board and BIOS.</p>
+    <p>See current and requested modes separately, with mode colors, pending animation, optional reduced motion, and About, release notes and system details. KDE uses its native tray; GNOME can use the maintained AppIndicator adapter for the same menu.</p>
+    <p>After a successful request, explicitly choose Restart, Power Off or Later. Desktop confirmation and inhibitors remain in control; no power action is automatic. Warm-restart effectiveness and real firmware-failure recovery have not been verified. Full shutdown and power-on is the path established by the captured tests.</p>
+    <p xml:lang="tr">MSI Vector 16 HX AI A2XWIG, MS-15M3 ve E15M3IMS.116 BIOS için topluluk tarafından geliştirilen Qt 6 uygulaması. Hibrit ve Ayrık için tam kapatıp açma sonrası üç donanım geçişi kaydedildi. Cihaz sahibi ayrıca Entegre donanım başarısı bildirdi; bu testin yönü ve açılış yöntemi kaydedilmedi. Üç mod da bu tam yapılandırmada normal seçeneklerdir.</p>
+    <p xml:lang="tr">Geçerli ve istenen mod ayrı gösterilir. Mod renkleri, bekleme animasyonu, isteğe bağlı hareket azaltma, Hakkında, sürüm notları ve sistem ayrıntıları bulunur. GNOME, aynı tepsi menüsü için AppIndicator uyarlayıcısını kullanabilir.</p>
+    <p xml:lang="tr">Başarılı isteğin ardından Yeniden Başlat, Kapat veya Daha Sonra seçeneğini açıkça seçin. Masaüstünün onay ve engelleyici kontrolleri korunur; güç işlemi otomatik değildir. Yalnız yeniden başlatmanın yeterliliği ve gerçek firmware hatasından kurtarma doğrulanmamıştır. Kayıtlı testlerde tam kapatma ve yeniden açma kullanılmıştır.</p>
   </description>
   <launchable type="desktop-id">org.hayatboj.msimux.desktop</launchable>
   <url type="homepage">https://github.com/hayatboj/msi-gpu-mux-switch</url>
@@ -20,6 +22,14 @@
   <content_rating type="oars-1.1"/>
   <developer id="io.github.hayatboj"><name>MSI MUX community contributors</name></developer>
   <releases>
+    <release version="0.4.0" date="2026-09-07" type="stable">
+      <description>
+        <p>Integrated joins Hybrid and Discrete as an ordinary mode following the owner's reported hardware success. Captured Hybrid/Discrete evidence remains separate.</p>
+        <p>Adds About, release notes and system details, red Discrete/amber Hybrid/teal Integrated visuals, animated pending feedback and optional reduced motion. Explicit Restart, Power Off and Later choices use normal desktop session handling. Adds GNOME AppIndicator setup guidance and launcher mode requests.</p>
+        <p xml:lang="tr">Cihaz sahibinin başarılı donanım testi bildiriminden sonra Entegre, Hibrit ve Ayrık yanında normal seçenek oldu. Kayıtlı Hibrit/Ayrık kanıtları ayrı tutulur.</p>
+        <p xml:lang="tr">Hakkında, sürüm notları, sistem ayrıntıları, mod renkleri, bekleme animasyonu ve hareketi azaltma eklendi. Yeniden Başlat, Kapat ve Daha Sonra seçimleri normal masaüstü oturum akışını kullanır. GNOME AppIndicator kurulum rehberi ve başlatıcı mod istekleri eklendi.</p>
+      </description>
+    </release>
     <release version="0.3.0" date="2026-09-07" type="stable">
       <description>
         <p>Hybrid and Discrete transitions verified on Vector 16 HX AI A2XWIG, MS-15M3, BIOS E15M3IMS.116. Integrated mode requires experimental opt-in.</p>

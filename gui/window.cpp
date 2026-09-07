@@ -1,13 +1,13 @@
 #include "window.h"
+#include "aboutdialog.h"
+#include "desktopintegration.h"
+#include "modehero.h"
 
 #include <QActionGroup>
 #include <QApplication>
 #include <QCloseEvent>
-#include <QDBusConnection>
-#include <QDBusMessage>
-#include <QDBusPendingCallWatcher>
-#include <QDBusPendingReply>
 #include <QDialog>
+#include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFile>
@@ -22,6 +22,7 @@
 #include <QPainter>
 #include <QPushButton>
 #include <QSaveFile>
+#include <QScopedValueRollback>
 #include <QScrollArea>
 #include <QScreen>
 #include <QStandardPaths>
@@ -51,9 +52,9 @@ static QIcon modeTrayIcon(const QIcon &base, Mode mode, bool pending) {
     QPainter painter(&pixmap);
     painter.setRenderHint(QPainter::Antialiasing);
     painter.setPen(QPen(QColor(QStringLiteral("#ffffff")), 2));
-    painter.setBrush(QColor(mode == Mode::Discrete ? QStringLiteral("#246aa0") :
-        mode == Mode::Integrated ? QStringLiteral("#527b32") :
-        mode == Mode::Hybrid ? QStringLiteral("#167d69") : QStringLiteral("#58656b")));
+    painter.setBrush(QColor(mode == Mode::Discrete ? QStringLiteral("#ac3345") :
+        mode == Mode::Integrated ? QStringLiteral("#167d69") :
+        mode == Mode::Hybrid ? QStringLiteral("#946518") : QStringLiteral("#58656b")));
     painter.drawRoundedRect(QRectF(33, 33, 29, 29), 9, 9);
     QFont font = painter.font();
     font.setPixelSize(21);
@@ -73,11 +74,10 @@ static QIcon modeTrayIcon(const QIcon &base, Mode mode, bool pending) {
 }
 
 Window::Window(bool demo, Language language, bool trayEnabled, QWidget *parent)
-    : QMainWindow(parent), m_backend(demo, this), m_language(language), m_settings(), m_tray(this), m_trayEnabled(trayEnabled) {
+    : QMainWindow(parent), m_backend(demo, this), m_powerActions(demo, this), m_language(language), m_settings(), m_tray(this), m_trayEnabled(trayEnabled) {
     setWindowTitle(QStringLiteral("MSI MUX"));
     setWindowIcon(QIcon(QStringLiteral(":/icons/msi-mux.svg")));
-    m_backend.setExperimentalIntegratedEnabled(!demo &&
-        m_settings.value(QStringLiteral("experimentalIntegratedEnabled"), false).toBool());
+    m_reducedMotion = !demo && m_settings.value(QStringLiteral("reducedMotion"), false).toBool();
     setMinimumSize(590, 640);
     const int availableHeight = QGuiApplication::primaryScreen() ? QGuiApplication::primaryScreen()->availableGeometry().height() : 980;
     resize(680, qBound(640, availableHeight - 80, 900));
@@ -86,11 +86,22 @@ Window::Window(bool demo, Language language, bool trayEnabled, QWidget *parent)
     connect(&m_backend, &Backend::statusChanged, this, [this] {
         if (m_backend.status().valid) m_statusError.clear();
         updateUi();
+        if (m_requestedMode != Mode::Unknown) {
+            const auto mode = m_requestedMode;
+            m_requestedMode = Mode::Unknown;
+            QTimer::singleShot(0, this, [this, mode] {
+                if (m_backend.canApplyMode(mode)) applyMode(mode);
+                else showDetails(QStringLiteral("MSI MUX"), blockText(m_backend.status(), m_language).isEmpty() ?
+                    t(Text::NoChanges) : blockText(m_backend.status(), m_language), m_lastDetails);
+                m_requestInFlight = false;
+            });
+        }
     });
     connect(&m_backend, &Backend::refreshingChanged, this, [this](bool) { updateUi(); });
     connect(&m_backend, &Backend::busyChanged, this, [this](bool busy) {
+        const bool visible = isVisible();
         setWindowFlag(Qt::WindowCloseButtonHint, !busy);
-        if (isVisible() || busy) showPanel();
+        if (visible || busy) showPanel();
         updateUi();
     });
     connect(&m_backend, &Backend::statusError, this, [this](const QString &code, const QString &details) {
@@ -100,15 +111,33 @@ Window::Window(bool demo, Language language, bool trayEnabled, QWidget *parent)
     });
     connect(&m_backend, &Backend::applyFinished, this, [this](bool success, bool cancelled, const QString &details) {
         m_lastDetails = details;
-        m_successfulApply = success;
         updateUi();
         showPanel();
         const auto message = success ? t(m_backend.demo() ? Text::DemoApply : Text::ApplySuccess) :
             t(cancelled ? Text::PermissionDenied : Text::ApplyUncertain);
         if (success) {
             m_tray.showMessage(QStringLiteral("MSI MUX"), message, QSystemTrayIcon::Information, 10000);
+            QTimer::singleShot(0, this, &Window::shutdown);
         } else {
             showDetails(t(Text::ApplyFailed), message, details);
+        }
+    });
+    connect(&m_powerActions, &PowerActions::busyChanged, this, [this](bool) { updateUi(); });
+    connect(&m_powerActions, &PowerActions::finished, this, [this](PowerAction, PowerResult result, const QString &details) {
+        Text text = Text::PowerRequestFailed;
+        switch (result) {
+        case PowerResult::Requested: text = Text::PowerRequestSent; break;
+        case PowerResult::Cancelled: text = Text::PowerRequestCancelled; break;
+        case PowerResult::Denied: text = Text::PowerRequestDenied; break;
+        case PowerResult::Unavailable: text = Text::PowerRequestUnavailable; break;
+        case PowerResult::Failed: text = Text::PowerRequestFailed; break;
+        case PowerResult::Demo: text = Text::PowerRequestDemo; break;
+        }
+        updateUi();
+        if (result == PowerResult::Requested) {
+            m_tray.showMessage(QStringLiteral("MSI MUX"), t(text), QSystemTrayIcon::Information, 8000);
+        } else {
+            showDetails(QStringLiteral("MSI MUX"), t(text), details);
         }
     });
     m_refreshTimer.setInterval(15000);
@@ -135,19 +164,12 @@ void Window::buildUi() {
         "QLabel#muted { font-size:12px; }"
         "QLabel#version { font-size:11px; }"
         "QLabel#demo { color:#09644f; background:#d4f6e9; padding:7px 12px; border-radius:7px; font-size:11px; font-weight:700; }"
-        "QFrame#hero { background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #133f40,stop:1 #112c38); border-radius:18px; }"
-        "QFrame#hero QLabel { color:#f0fffc; }"
-        "QFrame#hero QLabel#heroCaption { color:#91beba; font-size:10px; font-weight:700; letter-spacing:1.8px; }"
-        "QFrame#hero QLabel#heroMode { font-size:38px; font-weight:700; letter-spacing:-1px; }"
-        "QFrame#hero QLabel#heroDescription { color:#b6cfcd; font-size:12px; }"
-        "QFrame#hero QLabel#heroValue { font-size:13px; font-weight:600; }"
-        "QLabel#power { color:#a4eed5; background:#254e4d; padding:6px 10px; border-radius:9px; font-size:11px; }"
-        "QFrame#modeCard, QFrame#deviceCard { background:%2; border:1px solid %5; border-radius:12px; }"
+        "QFrame#modeCard { background:%2; border:1px solid %5; border-radius:12px; }"
         "QFrame#modeCard[active=true] { border:1px solid #269d87; }"
+        "QFrame#modeCard[active=true][mode=discrete] { border-color:#bd4857; }"
+        "QFrame#modeCard[active=true][mode=hybrid] { border-color:#b18837; }"
         "QLabel#modeBadge { color:#248c79; background:%1; border-radius:11px; font-size:16px; font-weight:700; }"
         "QFrame#pending { background:%2; border:1px solid #269d87; border-radius:12px; }"
-        "QFrame#notice { background:%2; border:1px solid %5; border-radius:12px; }"
-        "QLabel#noticeTitle { font-weight:650; font-size:12px; }"
         "QLabel#status { color:%4; font-size:12px; padding:5px 0; }"
         "QPushButton, QToolButton { color:%3; background:%2; border:1px solid %5; border-radius:8px; padding:8px 14px; font-weight:600; }"
         "QPushButton:hover, QToolButton:hover { border-color:#269d87; }"
@@ -196,31 +218,9 @@ void Window::buildUi() {
     m_demoLabel->setVisible(m_backend.demo());
     layout->addWidget(m_demoLabel);
 
-    auto *hero = new QFrame(body);
-    hero->setObjectName(QStringLiteral("hero"));
-    auto *heroLayout = new QVBoxLayout(hero);
-    heroLayout->setContentsMargins(25, 21, 25, 22);
-    heroLayout->setSpacing(7);
-    auto *heroTop = new QHBoxLayout;
-    m_currentCaption = label(hero, QStringLiteral("heroCaption"));
-    heroTop->addWidget(m_currentCaption);
-    heroTop->addStretch();
-    m_powerLabel = label(hero, QStringLiteral("power"));
-    heroTop->addWidget(m_powerLabel);
-    heroLayout->addLayout(heroTop);
-    m_modeLabel = label(hero, QStringLiteral("heroMode"));
-    heroLayout->addWidget(m_modeLabel);
-    m_modeDescription = label(hero, QStringLiteral("heroDescription"), true);
-    heroLayout->addWidget(m_modeDescription);
-    heroLayout->addSpacing(11);
-    auto *panel = new QHBoxLayout;
-    m_panelCaption = label(hero, QStringLiteral("heroCaption"));
-    m_panelValue = label(hero, QStringLiteral("heroValue"));
-    panel->addWidget(m_panelCaption);
-    panel->addStretch();
-    panel->addWidget(m_panelValue);
-    heroLayout->addLayout(panel);
-    layout->addWidget(hero);
+    m_hero = new ModeHero(body);
+    m_hero->setReducedMotion(m_reducedMotion);
+    layout->addWidget(m_hero);
 
     m_statusLabel = label(body, QStringLiteral("status"), true);
     layout->addWidget(m_statusLabel);
@@ -245,10 +245,18 @@ void Window::buildUi() {
     for (size_t index = 0; index < modes.size(); ++index) {
         auto *modeCard = new QFrame(body);
         modeCard->setObjectName(QStringLiteral("modeCard"));
+        modeCard->setProperty("mode", index == 0 ? "hybrid" : index == 1 ? "discrete" : "integrated");
         auto *row = new QHBoxLayout(modeCard);
         row->setContentsMargins(15, 13, 15, 13);
         row->setSpacing(13);
         auto *badge = label(modeCard, QStringLiteral("modeBadge"));
+        const QString badgeInk = index == 0 ? (dark ? QStringLiteral("#ffda88") : QStringLiteral("#805918")) :
+            index == 1 ? (dark ? QStringLiteral("#ff9ba4") : QStringLiteral("#ab3143")) :
+            (dark ? QStringLiteral("#86edc6") : QStringLiteral("#1b7560"));
+        const QString badgeBackground = index == 0 ? (dark ? QStringLiteral("#4b4026") : QStringLiteral("#fbf2d9")) :
+            index == 1 ? (dark ? QStringLiteral("#492b33") : QStringLiteral("#fdecef")) :
+            (dark ? QStringLiteral("#21473e") : QStringLiteral("#e5f6ed"));
+        badge->setStyleSheet(QStringLiteral("color:%1; background:%2; border-radius:11px; font-size:16px; font-weight:700;").arg(badgeInk, badgeBackground));
         badge->setText(QString::fromLatin1(index == 0 ? "H" : index == 1 ? "D" : "I"));
         badge->setAlignment(Qt::AlignCenter);
         badge->setFixedSize(40, 40);
@@ -263,48 +271,18 @@ void Window::buildUi() {
         m_modeButtons[index] = new QPushButton(modeCard);
         m_modeButtons[index]->setMinimumWidth(74);
         row->addWidget(m_modeButtons[index]);
-        connect(m_modeButtons[index], &QPushButton::clicked, this, [this, index] { applyMode(modes[index]); });
+        connect(m_modeButtons[index], &QPushButton::clicked, this, [this, index] { requestMode(modes[index]); });
         m_modeCards[index] = modeCard;
         modeLayout->addWidget(modeCard);
     }
     layout->addLayout(modeLayout);
 
-    auto *device = new QFrame(body);
-    device->setObjectName(QStringLiteral("deviceCard"));
-    auto *deviceLayout = new QVBoxLayout(device);
-    deviceLayout->setContentsMargins(17, 14, 17, 14);
-    auto *deviceRow = new QHBoxLayout;
-    auto *model = new QVBoxLayout;
-    m_deviceCaption = label(device, QStringLiteral("caption"));
-    m_deviceValue = label(device, QStringLiteral("muted"), true);
-    model->addWidget(m_deviceCaption);
-    model->addWidget(m_deviceValue);
-    deviceRow->addLayout(model, 1);
-    auto *bios = new QVBoxLayout;
-    m_biosCaption = label(device, QStringLiteral("caption"));
-    m_biosValue = label(device, QStringLiteral("muted"));
-    bios->addWidget(m_biosCaption);
-    bios->addWidget(m_biosValue);
-    deviceRow->addLayout(bios);
-    deviceLayout->addLayout(deviceRow);
-    m_compatibilityLabel = label(device, QStringLiteral("muted"));
-    deviceLayout->addWidget(m_compatibilityLabel);
-    layout->addWidget(device);
-
-    auto *notice = new QFrame(body);
-    notice->setObjectName(QStringLiteral("notice"));
-    auto *noticeLayout = new QVBoxLayout(notice);
-    noticeLayout->setContentsMargins(17, 13, 17, 13);
-    noticeLayout->setSpacing(5);
-    m_experimentalTitle = label(notice, QStringLiteral("noticeTitle"));
-    m_experimentalDetail = label(notice, QStringLiteral("muted"), true);
-    noticeLayout->addWidget(m_experimentalTitle);
-    noticeLayout->addWidget(m_experimentalDetail);
-    layout->addWidget(notice);
-
     auto *footer = new QHBoxLayout;
     m_version = label(body, QStringLiteral("version"));
     footer->addWidget(m_version, 1);
+    m_aboutButton = new QPushButton(body);
+    connect(m_aboutButton, &QPushButton::clicked, this, [this] { showAbout(); });
+    footer->addWidget(m_aboutButton);
     m_trButton = new QToolButton(body);
     m_trButton->setObjectName(QStringLiteral("lang"));
     m_trButton->setText(QStringLiteral("TR"));
@@ -342,7 +320,7 @@ void Window::buildMenus() {
         m_modeActions[index] = m_trayMenu->addAction(QString());
         m_modeActions[index]->setCheckable(true);
         group->addAction(m_modeActions[index]);
-        connect(m_modeActions[index], &QAction::triggered, this, [this, index] { applyMode(modes[index]); });
+        connect(m_modeActions[index], &QAction::triggered, this, [this, index] { requestMode(modes[index]); });
     }
     m_shutdownAction = m_trayMenu->addAction(QString(), this, &Window::shutdown);
     m_trayMenu->addSeparator();
@@ -362,10 +340,16 @@ void Window::buildMenus() {
     m_autostartAction->setChecked(QFileInfo::exists(autostartPath()));
     m_autostartAction->setEnabled(!m_backend.demo());
     connect(m_autostartAction, &QAction::triggered, this, &Window::setAutostart);
-    m_experimentalIntegratedAction = m_preferencesMenu->addAction(QString());
-    m_experimentalIntegratedAction->setCheckable(true);
-    m_experimentalIntegratedAction->setChecked(m_backend.experimentalIntegratedEnabled());
-    connect(m_experimentalIntegratedAction, &QAction::triggered, this, &Window::setExperimentalIntegrated);
+    m_reducedMotionAction = m_preferencesMenu->addAction(QString());
+    m_reducedMotionAction->setCheckable(true);
+    m_reducedMotionAction->setChecked(m_reducedMotion);
+    connect(m_reducedMotionAction, &QAction::triggered, this, &Window::setReducedMotion);
+    m_preferencesMenu->addSeparator();
+    m_aboutAction = m_preferencesMenu->addAction(QString(), this, [this] { showAbout(); });
+    m_whatsNewAction = m_preferencesMenu->addAction(QString(), this, [this] { showAbout(true); });
+    m_gnomeSetupAction = m_preferencesMenu->addAction(QString(), this, [] {
+        QDesktopServices::openUrl(DesktopIntegration::gnomeSetupUrl());
+    });
     m_preferencesMenu->addSeparator();
     m_quitAction = m_preferencesMenu->addAction(QString(), this, &Window::requestQuit);
     m_preferencesButton->setMenu(m_preferencesMenu);
@@ -389,7 +373,8 @@ QString Window::panelLabel() const {
         if (vendor == QLatin1String("0x8086")) vendor = QStringLiteral("Intel");
         if (vendor == QLatin1String("0x10de")) vendor = QStringLiteral("NVIDIA");
         if (vendor == QLatin1String("0x1002")) vendor = QStringLiteral("AMD");
-        values.append(QStringLiteral("%1 · %2").arg(vendor.isEmpty() ? t(Text::Unknown) : vendor, display.connector));
+        const auto value = vendor.isEmpty() ? t(Text::Unknown) : vendor;
+        if (!values.contains(value)) values.append(value);
     }
     return values.isEmpty() ? t(Text::NoPanel) : values.join(QStringLiteral(", "));
 }
@@ -400,15 +385,7 @@ void Window::updateUi() {
     const bool refreshing = m_backend.refreshing();
     m_subtitle->setText(t(Text::Subtitle));
     m_demoLabel->setText(t(Text::Demo));
-    m_currentCaption->setText(t(Text::CurrentMode));
-    m_modeLabel->setText(modeName(status.current, m_language));
-    Text description = Text::Reading;
-    for (size_t index = 0; index < modes.size(); ++index)
-        if (modes[index] == status.current) description = descriptions[index];
-    m_modeDescription->setText(status.valid ? t(description) : t(m_statusError.isEmpty() ? Text::Reading : Text::Disabled));
-    m_panelCaption->setText(t(Text::InternalPanel).toUpper());
-    m_panelValue->setText(panelLabel());
-    m_powerLabel->setText(!status.valid ? t(Text::Unknown) : t(status.acPower ? Text::AcConnected : Text::Battery));
+    m_hero->setState(status, m_language, panelLabel(), busy);
     m_chooseLabel->setText(t(Text::SelectMode));
     QString reason = blockText(status, m_language);
     if (busy) reason = t(Text::Busy);
@@ -418,21 +395,21 @@ void Window::updateUi() {
     m_statusLabel->setText(reason);
     m_statusLabel->setVisible(!reason.isEmpty() && (!status.pendingShutdown || status.blockCode == QLatin1String("recovery_required")));
     m_statusLabel->setToolTip(m_lastDetails);
-    m_pendingCard->setVisible(status.pendingShutdown);
+    const bool routinePending = status.routinePending();
+    m_pendingCard->setVisible(routinePending);
     m_pendingTitle->setText(t(Text::PendingTitle));
     m_pendingDescription->setText(t(Text::PendingDetail).arg(modeName(status.target, m_language)));
-    m_shutdownButton->setText(t(Text::Shutdown));
-    m_shutdownButton->setVisible(m_successfulApply);
-    m_shutdownButton->setEnabled(!busy);
+    m_shutdownButton->setText(t(Text::PowerOptions));
+    m_shutdownButton->setVisible(routinePending);
+    m_shutdownButton->setEnabled(!busy && !m_powerActions.busy());
     for (size_t index = 0; index < modes.size(); ++index) {
         const auto mode = modes[index];
         const bool active = status.current == mode;
         const bool enabled = m_backend.canApplyMode(mode);
-        const auto name = mode == Mode::Integrated ? t(Text::IntegratedExperimental) : modeName(mode, m_language);
+        const auto name = modeName(mode, m_language);
         m_modeNames[index]->setText(name);
-        m_modeDescriptions[index]->setText(t(mode == Mode::Integrated && !m_backend.experimentalIntegratedEnabled() ?
-            Text::IntegratedOptInRequired : descriptions[index]));
-        m_modeButtons[index]->setText(t(active ? Text::Active : Text::Select));
+        m_modeDescriptions[index]->setText(t(descriptions[index]));
+        m_modeButtons[index]->setText(t(active ? Text::Active : routinePending && status.target == mode ? Text::Target : Text::Select));
         m_modeButtons[index]->setEnabled(enabled);
         m_modeButtons[index]->setAccessibleName(t(Text::ApplyTitle).arg(modeName(mode, m_language)));
         m_modeCards[index]->setProperty("active", active);
@@ -442,15 +419,8 @@ void Window::updateUi() {
         m_modeActions[index]->setChecked(active);
         m_modeActions[index]->setEnabled(enabled);
     }
-    m_deviceCaption->setText(t(Text::Hardware).toUpper());
-    m_deviceValue->setText(status.model.isEmpty() ? t(Text::Unknown) : status.model);
-    m_deviceValue->setToolTip(status.board);
-    m_biosCaption->setText(t(Text::Firmware));
-    m_biosValue->setText(status.bios.isEmpty() ? t(Text::Unknown) : status.bios);
-    m_compatibilityLabel->setText(t(status.expectedHardware && status.bios == QLatin1String("E15M3IMS.116") ? Text::Compatible : Text::Unsupported));
-    m_experimentalTitle->setText(t(Text::Experimental));
-    m_experimentalDetail->setText(t(Text::ExperimentalDetail));
-    m_version->setText(t(Text::Version).arg(QStringLiteral("0.3.0")));
+    m_version->setText(t(Text::Version).arg(QCoreApplication::applicationVersion()));
+    m_aboutButton->setText(t(Text::About));
     m_refreshButton->setText(t(refreshing ? Text::Refreshing : Text::Refresh));
     m_refreshButton->setEnabled(!busy && !refreshing);
     m_preferencesButton->setToolTip(t(Text::Settings));
@@ -464,14 +434,18 @@ void Window::updateUi() {
     m_refreshAction->setEnabled(!busy && !refreshing);
     m_languageMenu->setTitle(t(Text::LanguageMenu));
     m_autostartAction->setText(t(Text::Autostart));
-    m_experimentalIntegratedAction->setText(t(Text::EnableExperimentalIntegrated));
-    m_experimentalIntegratedAction->setChecked(m_backend.experimentalIntegratedEnabled());
-    m_experimentalIntegratedAction->setEnabled(!busy);
+    m_reducedMotionAction->setText(t(Text::ReducedMotion));
+    m_reducedMotionAction->setChecked(m_reducedMotion);
+    m_aboutAction->setText(t(Text::About));
+    m_whatsNewAction->setText(t(Text::WhatsNew));
+    m_gnomeSetupAction->setText(t(Text::GnomeSetup));
+    m_gnomeSetupAction->setToolTip(t(Text::GnomeSetupDetail));
+    m_gnomeSetupAction->setVisible(DesktopIntegration::detect(QSystemTrayIcon::isSystemTrayAvailable()).needsGnomeSetup());
     m_quitAction->setText(t(Text::Quit));
     m_quitAction->setEnabled(!busy);
-    m_shutdownAction->setText(t(Text::Shutdown));
-    m_shutdownAction->setVisible(status.pendingShutdown && m_successfulApply);
-    m_shutdownAction->setEnabled(!busy);
+    m_shutdownAction->setText(t(Text::PowerOptions));
+    m_shutdownAction->setVisible(routinePending);
+    m_shutdownAction->setEnabled(!busy && !m_powerActions.busy());
     m_englishAction->setChecked(m_language == Language::English);
     m_turkishAction->setChecked(m_language == Language::Turkish);
     m_trButton->setChecked(m_language == Language::Turkish);
@@ -482,7 +456,8 @@ void Window::updateUi() {
 }
 
 void Window::applyMode(Mode mode) {
-    if (!m_backend.canApplyMode(mode)) return;
+    if (m_confirming || !m_backend.canApplyMode(mode)) return;
+    QScopedValueRollback<bool> confirming(m_confirming, true);
     showPanel();
     QDialog dialog(this);
     dialog.setWindowTitle(t(Text::ApplyTitle).arg(modeName(mode, m_language)));
@@ -494,8 +469,7 @@ void Window::applyMode(Mode mode) {
     description->setText(t(Text::ApplyDescription).arg(modeName(mode, m_language)));
     layout->addWidget(description);
     auto *risk = label(&dialog, QStringLiteral("muted"), true);
-    risk->setText(m_backend.demo() ? t(Text::Demo) :
-        (mode == Mode::Integrated ? t(Text::IntegratedRisk) + QLatin1Char('\n') : QString()) + t(Text::ApplyRisk));
+    risk->setText(m_backend.demo() ? t(Text::Demo) : t(Text::ApplyRisk));
     layout->addWidget(risk);
     auto *tokenLabel = label(&dialog);
     tokenLabel->setText(t(Text::TypeToken).arg(modeToken(mode)));
@@ -525,23 +499,52 @@ void Window::applyMode(Mode mode) {
 }
 
 void Window::shutdown() {
-    if (!m_successfulApply || !m_backend.status().pendingShutdown || m_backend.busy()) return;
-    QMessageBox box(QMessageBox::Question, t(Text::ShutdownTitle), t(Text::ShutdownConfirm), QMessageBox::NoButton, this);
-    auto *cancel = box.addButton(t(Text::Cancel), QMessageBox::RejectRole);
-    auto *confirm = box.addButton(t(Text::Shutdown), QMessageBox::AcceptRole);
-    box.setDefaultButton(cancel);
-    box.exec();
-    if (box.clickedButton() != confirm) return;
-    if (m_backend.demo()) { showDetails(QStringLiteral("MSI MUX"), t(Text::DemoApply), {}); return; }
-    auto message = QDBusMessage::createMethodCall(QStringLiteral("org.freedesktop.login1"),
-        QStringLiteral("/org/freedesktop/login1"), QStringLiteral("org.freedesktop.login1.Manager"), QStringLiteral("PowerOff"));
-    message << false;
-    auto *watcher = new QDBusPendingCallWatcher(QDBusConnection::systemBus().asyncCall(message), this);
-    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, watcher] {
-        QDBusPendingReply<> reply = *watcher;
-        if (reply.isError()) showDetails(t(Text::Error), t(Text::ShutdownFailed), reply.error().message());
-        watcher->deleteLater();
-    });
+    const auto &status = m_backend.status();
+    if (m_powerDialogOpen || m_confirming || m_backend.busy() || m_powerActions.busy() ||
+        !status.routinePending()) return;
+    QScopedValueRollback<bool> open(m_powerDialogOpen, true);
+    const Mode confirmedCurrent = status.current;
+    const Mode confirmedTarget = status.target;
+    showPanel();
+    QDialog dialog(this);
+    dialog.setWindowTitle(t(Text::PowerSuccessTitle));
+    dialog.setMinimumWidth(520);
+    auto *layout = new QVBoxLayout(&dialog);
+    layout->setContentsMargins(24, 22, 24, 22);
+    layout->setSpacing(15);
+    auto *title = label(&dialog, QStringLiteral("modeName"), true);
+    title->setText(modeName(status.current, m_language) + QStringLiteral(" → ") + modeName(status.target, m_language));
+    layout->addWidget(title);
+    auto *description = label(&dialog, {}, true);
+    description->setText(t(Text::PowerSuccessDetail).arg(modeName(status.current, m_language), modeName(status.target, m_language)));
+    layout->addWidget(description);
+    auto *restartNote = label(&dialog, QStringLiteral("muted"), true);
+    restartNote->setText(m_backend.demo() ? t(Text::PowerRequestDemo) : t(Text::RestartUnverified));
+    layout->addWidget(restartNote);
+    auto *buttons = new QDialogButtonBox(&dialog);
+    auto *later = buttons->addButton(t(Text::Later), QDialogButtonBox::RejectRole);
+    auto *restart = buttons->addButton(t(Text::Restart), QDialogButtonBox::ActionRole);
+    auto *powerOff = buttons->addButton(t(Text::Shutdown), QDialogButtonBox::ActionRole);
+    powerOff->setObjectName(QStringLiteral("primary"));
+    later->setDefault(true);
+    layout->addWidget(buttons);
+    connect(later, &QPushButton::clicked, &dialog, &QDialog::reject);
+    connect(restart, &QPushButton::clicked, &dialog, [&dialog] { dialog.done(2); });
+    connect(powerOff, &QPushButton::clicked, &dialog, [&dialog] { dialog.done(3); });
+    const int choice = dialog.exec();
+    // A new recovery condition or another transaction may have appeared while
+    // the user read the dialog. Recheck before sending a desktop request.
+    const auto &latest = m_backend.status();
+    if (!latest.routinePending() || m_backend.busy() || latest.current != confirmedCurrent || latest.target != confirmedTarget) return;
+    if (choice == 2) m_powerActions.request(PowerAction::Restart);
+    else if (choice == 3) m_powerActions.request(PowerAction::PowerOff);
+}
+
+void Window::showAbout(bool changes) {
+    if (m_infoDialogOpen || m_confirming || m_powerDialogOpen) return;
+    QScopedValueRollback<bool> open(m_infoDialogOpen, true);
+    AboutDialog dialog(m_language, m_backend.status(), this, changes);
+    dialog.exec();
 }
 
 void Window::showDetails(const QString &title, const QString &message, const QString &details) {
@@ -589,11 +592,22 @@ void Window::setAutostart(bool enabled) {
     if (!success) showDetails(t(Text::Error), t(Text::AutostartFailed), {});
 }
 
-void Window::setExperimentalIntegrated(bool enabled) {
-    if (m_backend.busy()) return;
-    m_backend.setExperimentalIntegratedEnabled(enabled);
-    if (!m_backend.demo()) m_settings.setValue(QStringLiteral("experimentalIntegratedEnabled"), enabled);
-    updateUi();
+void Window::setReducedMotion(bool enabled) {
+    m_reducedMotion = enabled;
+    m_hero->setReducedMotion(enabled);
+    if (!m_backend.demo()) m_settings.setValue(QStringLiteral("reducedMotion"), enabled);
+    m_reducedMotionAction->setChecked(enabled);
+}
+
+void Window::requestMode(Mode mode) {
+    showPanel();
+    if (mode == Mode::Unknown || m_requestInFlight || m_confirming || m_powerDialogOpen ||
+        m_infoDialogOpen || m_backend.busy() || m_powerActions.busy()) return;
+    m_requestInFlight = true;
+    m_requestedMode = mode;
+    // Status is a read-only probe. The signal handler opens one confirmation
+    // only after that fresh reading; external requests never apply a mode.
+    m_backend.refresh();
 }
 
 void Window::showPanel() {

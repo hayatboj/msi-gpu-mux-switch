@@ -12,16 +12,20 @@ Polkit requires administrator authorization per request. The application install
 
 The backend enforces hardware/BIOS identity, AC power, firmware layout, mode capabilities, serialization, fresh preflight, durable transaction state, write verification, and reporting of uncertain outcomes. The GUI is never the sole protection.
 
+Launcher and local IPC mode requests are unprivileged requests to open the normal typed confirmation flow. GNOME's AppIndicator adapter displays the existing Qt indicator/menu and receives no separate firmware privilege. Desktop detection only controls presentation and setup guidance.
+
+Restart and Power Off require a separate explicit user choice after a successful mode request. The application asks the active desktop's normal session interface and preserves its confirmation, inhibitors and cancellation. It does not force a power action, bypass the desktop through a direct logind request, or retry through another transport after a failure or uncertain reply. A desktop accepting a request does not prove that it completed or that the physical MUX changed.
+
 Installed executables, policies, and parent directories must be root-controlled and not group/world writable. A helper copied without the matching backend and policy is unsupported.
 
 ## Recovery boundaries
 
 Restoring the selected mode is not a complete firmware rollback. A firmware method can take effect before its response fails. A crash or power interruption can skip in-process recovery. Durable metadata preserves that uncertainty and prevents an automatic repeat attempt.
 
-Metadata is not a full BIOS backup. Do not commit raw firmware. The CLI and desktop helper provide no hardware or BIOS write bypasses. Integrated is an advanced experimental CLI mode and requires separate desktop settings opt-in; that opt-in does not weaken backend safety checks.
+Metadata is not a full BIOS backup. Do not commit raw firmware. The CLI and desktop helper provide no hardware or BIOS write bypasses. All three modes, including Integrated, retain the same backend safety checks.
 
-Stable version `0.3.0` covers Hybrid/Discrete switching on the exact Vector 16 HX AI A2XWIG / MS-15M3 / E15M3IMS.116 configuration. Three successful real transitions with full shutdown/power-on cycles are recorded in [the validation record](docs/VALIDATION.md). Integrated switching and recovery from an actual firmware failure have not been validated. Stable status does not promise recovery from every failure or support for other firmware versions.
+Version `0.4.0` offers Hybrid, Discrete and Integrated on the exact Vector 16 HX AI A2XWIG / MS-15M3 / E15M3IMS.116 configuration. Three Hybrid/Discrete transitions with full shutdown/power-on cycles are recorded in [the validation record](docs/VALIDATION.md). The owner separately reported Integrated hardware success; its direction and boot method were not captured. Warm-restart effectiveness and recovery from an actual firmware failure remain unverified. Release status does not promise recovery from every failure or support for other firmware versions.
 
 ## Tests
 
-Regression tests must cover rejection paths and partial failures using synthetic inputs and injected failures. Deliberately causing a real firmware failure is not a release requirement. CI must not load writable EC modules, invoke real apply methods, change UEFI variables, or power off a host.
+Regression tests must cover rejection paths and partial failures using synthetic inputs and injected failures. Deliberately causing a real firmware failure is not a release requirement. CI must not load writable EC modules, invoke real apply methods, change UEFI variables, or send real restart/shutdown requests. Session power tests use injected transports. Native GNOME behavior requires separate session testing and is not established by synthetic tests.

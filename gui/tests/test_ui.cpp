@@ -1,11 +1,19 @@
 #include "backend.h"
+#include "modehero.h"
+#include "window.h"
 #include "status.h"
 #include "translations.h"
 
 #include <QFile>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QDir>
+#include <QFrame>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSignalSpy>
+#include <QLineEdit>
+#include <QPushButton>
 #include <QTemporaryDir>
 #include <QtTest>
 
@@ -123,6 +131,7 @@ private slots:
             QVERIFY2(!Mux::tr(key, Language::English).isEmpty(), qPrintable(QString::number(index)));
             QVERIFY2(!Mux::tr(key, Language::Turkish).isEmpty(), qPrintable(QString::number(index)));
             QCOMPARE(Mux::tr(key, Language::English).count(QStringLiteral("%1")), Mux::tr(key, Language::Turkish).count(QStringLiteral("%1")));
+            QCOMPARE(Mux::tr(key, Language::English).count(QStringLiteral("%2")), Mux::tr(key, Language::Turkish).count(QStringLiteral("%2")));
         }
         QCOMPARE(modeName(Mode::Hybrid, Language::Turkish), QStringLiteral("Hibrit"));
         QCOMPARE(modeName(Mode::Discrete, Language::English), QStringLiteral("Discrete"));
@@ -211,27 +220,12 @@ private slots:
         QVERIFY(!backend.status().canSwitch(Mode::Integrated));
     }
 
-    void integratedRequiresExplicitOptInAtApplyBoundary() {
+    void integratedIsAvailableByDefaultAndDemoRemainsInert() {
         Backend backend(true);
         backend.refresh();
-        QVERIFY(!backend.experimentalIntegratedEnabled());
         QVERIFY(backend.canApplyMode(Mode::Discrete));
-        QVERIFY(!backend.canApplyMode(Mode::Integrated));
-        QSignalSpy applied(&backend, &Backend::applyFinished);
-        backend.apply(Mode::Integrated);
-        QVERIFY(!backend.busy());
-        QCOMPARE(backend.m_apply.state(), QProcess::NotRunning);
-        QCOMPARE(backend.status().target, Mode::Hybrid);
-        QCOMPARE(applied.size(), 0);
-
-        backend.setExperimentalIntegratedEnabled(true);
         QVERIFY(backend.canApplyMode(Mode::Integrated));
-        backend.setExperimentalIntegratedEnabled(false);
-        backend.apply(Mode::Integrated);
-        QVERIFY(!backend.busy());
-        QCOMPARE(applied.size(), 0);
-
-        backend.setExperimentalIntegratedEnabled(true);
+        QSignalSpy applied(&backend, &Backend::applyFinished);
         backend.apply(Mode::Integrated);
         QVERIFY(backend.busy());
         QCOMPARE(backend.m_apply.state(), QProcess::NotRunning);
@@ -241,10 +235,9 @@ private slots:
         QVERIFY(backend.status().pendingShutdown);
     }
 
-    void experimentalOptInDoesNotBypassHardwareGates() {
+    void integratedKeepsHardwareGates() {
         Backend backend(true);
         backend.refresh();
-        backend.setExperimentalIntegratedEnabled(true);
         backend.m_status.acPower = false;
         QVERIFY(!backend.canApplyMode(Mode::Integrated));
         backend.apply(Mode::Integrated);
@@ -257,23 +250,290 @@ private slots:
         QCOMPARE(backend.m_apply.state(), QProcess::NotRunning);
     }
 
-    void disablingExperimentalModeStillAllowsReturningToValidatedModes() {
+    void integratedCanReturnToOtherModes() {
         Backend backend(true);
         backend.refresh();
         backend.m_status.current = Mode::Integrated;
         backend.m_status.target = Mode::Integrated;
-        QVERIFY(!backend.experimentalIntegratedEnabled());
         QVERIFY(backend.canApplyMode(Mode::Hybrid));
         QVERIFY(backend.canApplyMode(Mode::Discrete));
     }
 
-    void experimentalModeTextIsExplicitInBothLanguages() {
-        QVERIFY(Mux::tr(Text::IntegratedExperimental, Language::English).contains(QStringLiteral("Experimental")));
-        QVERIFY(Mux::tr(Text::IntegratedExperimental, Language::Turkish).contains(QStringLiteral("Deneysel")));
-        QVERIFY(Mux::tr(Text::EnableExperimentalIntegrated, Language::English).contains(QStringLiteral("Enable")));
-        QVERIFY(Mux::tr(Text::EnableExperimentalIntegrated, Language::Turkish).contains(QStringLiteral("etkinleştir")));
-        QVERIFY(Mux::tr(Text::ExperimentalDetail, Language::English).contains(QStringLiteral("E15M3IMS.116")));
-        QVERIFY(Mux::tr(Text::ExperimentalDetail, Language::Turkish).contains(QStringLiteral("E15M3IMS.116")));
+    void heroKeepsPendingDirection_data() {
+        QTest::addColumn<int>("current");
+        QTest::addColumn<int>("target");
+        for (auto current : {Mode::Hybrid, Mode::Discrete, Mode::Integrated})
+            for (auto target : {Mode::Hybrid, Mode::Discrete, Mode::Integrated})
+                if (current != target) QTest::newRow(qPrintable(modeArgument(current) + QStringLiteral("-to-") + modeArgument(target)))
+                    << static_cast<int>(current) << static_cast<int>(target);
+    }
+    void heroKeepsPendingDirection() {
+        QFETCH(int, current);
+        QFETCH(int, target);
+        auto state = Status::demo();
+        state.current = static_cast<Mode>(current);
+        state.target = static_cast<Mode>(target);
+        state.pendingShutdown = true;
+        ModeHero hero;
+        hero.resize(624, 280);
+        hero.setReducedMotion(true);
+        hero.setState(state, Language::English, QStringLiteral("NVIDIA"));
+        QCOMPARE(hero.currentMode(), state.current);
+        QCOMPARE(hero.targetMode(), state.target);
+        QVERIFY(hero.pending());
+        QCOMPARE(hero.titleText(), modeName(state.current, Language::English) + QStringLiteral(" → ") + modeName(state.target, Language::English));
+        QVERIFY(hero.accessibleDescription().contains(QStringLiteral("Still running in ") + modeName(state.current, Language::English)));
+        QVERIFY(!hero.animationRunning());
+        const auto forward = hero.grab().toImage();
+        std::swap(state.current, state.target);
+        hero.setState(state, Language::English, QStringLiteral("NVIDIA"));
+        const auto reverse = hero.grab().toImage();
+        QVERIFY(forward.pixelColor(20, 140) != reverse.pixelColor(20, 140));
+    }
+
+    void heroStopsAnimationWhenHiddenOrReduced() {
+        auto state = Status::demo();
+        state.target = Mode::Discrete;
+        state.pendingShutdown = true;
+        ModeHero hero;
+        hero.setState(state, Language::Turkish, QStringLiteral("Intel"));
+        QVERIFY(!hero.animationRunning());
+        hero.show();
+        QTRY_VERIFY(hero.animationRunning());
+        hero.setReducedMotion(true);
+        QVERIFY(!hero.animationRunning());
+        hero.setReducedMotion(false);
+        QVERIFY(hero.animationRunning());
+        hero.showMinimized();
+        QTRY_VERIFY(!hero.animationRunning());
+        hero.showNormal();
+        QTRY_VERIFY(hero.animationRunning());
+        hero.hide();
+        QVERIFY(!hero.animationRunning());
+    }
+
+    void heroDoesNotTurnRecoveryIntoPendingSuccess() {
+        auto state = Status::demo();
+        state.target = Mode::Discrete;
+        state.pendingShutdown = true;
+        state.blockCode = QStringLiteral("recovery_required");
+        ModeHero hero;
+        hero.setState(state, Language::English, QStringLiteral("Intel"));
+        QVERIFY(!hero.pending());
+        QCOMPARE(hero.titleText(), QStringLiteral("Hybrid"));
+        state.blockCode.clear();
+        state.firmwareValid = false;
+        hero.setState(state, Language::English, QStringLiteral("Intel"));
+        QVERIFY(!hero.pending());
+        state.firmwareValid = true;
+        state.target = Mode::Unknown;
+        hero.setState(state, Language::English, QStringLiteral("Intel"));
+        QVERIFY(!hero.pending());
+    }
+
+    void windowExternalRequestWaitsForFreshReadAndOnlyConfirms() {
+        QTemporaryDir directory;
+        Window window(false, Language::English, false);
+        auto *backend = window.backend();
+        backend->m_statusProgram = script(directory, "sleep 0.10\nprintf '%s' '" + fixture() + "'\n");
+        backend->m_statusArguments.clear();
+        QSignalSpy status(backend, &Backend::statusChanged);
+        QSignalSpy applied(backend, &Backend::applyFinished);
+        bool sawConfirmation = false;
+        bool freshState = false;
+        bool typedConsentRequired = false;
+        QTimer inspector;
+        inspector.setInterval(10);
+        connect(&inspector, &QTimer::timeout, &window, [&] {
+            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            if (!dialog) return;
+            inspector.stop();
+            sawConfirmation = dialog->windowTitle().contains(QStringLiteral("Discrete"));
+            freshState = !status.isEmpty() && backend->status().valid && !backend->refreshing();
+            auto *input = dialog->findChild<QLineEdit *>();
+            auto *buttons = dialog->findChild<QDialogButtonBox *>();
+            if (input && buttons) {
+                for (auto *button : buttons->buttons()) {
+                    if (buttons->buttonRole(button) == QDialogButtonBox::AcceptRole)
+                        typedConsentRequired = input->text().isEmpty() && !button->isEnabled();
+                }
+            }
+            dialog->reject();
+        });
+        inspector.start();
+        window.requestMode(Mode::Discrete);
+        QVERIFY(!window.m_confirming);
+        QVERIFY(backend->refreshing());
+        QTRY_VERIFY_WITH_TIMEOUT(!window.m_requestInFlight, 3000);
+        QVERIFY(sawConfirmation);
+        QVERIFY(freshState);
+        QVERIFY(typedConsentRequired);
+        QCOMPARE(applied.size(), 0);
+        QCOMPARE(backend->m_apply.state(), QProcess::NotRunning);
+    }
+
+    void windowDuplicateRequestsNeverNestConfirmations() {
+        Window window(true, Language::Turkish, false);
+        auto *backend = window.backend();
+        QSignalSpy applied(backend, &Backend::applyFinished);
+        int confirmations = 0;
+        QTimer inspector;
+        inspector.setInterval(10);
+        connect(&inspector, &QTimer::timeout, &window, [&] {
+            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            if (!dialog) return;
+            ++confirmations;
+            window.requestMode(Mode::Integrated);
+            window.requestMode(Mode::Hybrid);
+            dialog->reject();
+        });
+        inspector.start();
+        window.requestMode(Mode::Discrete);
+        window.requestMode(Mode::Integrated);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.m_requestInFlight, 3000);
+        QTest::qWait(30);
+        inspector.stop();
+        QCOMPARE(confirmations, 1);
+        QCOMPARE(applied.size(), 0);
+        QCOMPARE(backend->status().current, Mode::Hybrid);
+        QCOMPARE(backend->status().target, Mode::Hybrid);
+        QCOMPARE(backend->m_apply.state(), QProcess::NotRunning);
+    }
+
+    void pendingStartupAndLaterNeverRequestPower() {
+        Window window(true, Language::English, false);
+        window.backend()->setDemoModes(Mode::Discrete, Mode::Hybrid);
+        QSignalSpy power(&window.m_powerActions, &PowerActions::finished);
+        window.showPanel();
+        QTest::qWait(30);
+        QVERIFY(!window.m_powerDialogOpen);
+        QVERIFY(window.m_pendingCard->isVisible());
+        QVERIFY(window.m_shutdownButton->isVisible());
+        QCOMPARE(power.size(), 0);
+        bool sawExplicitChoice = false;
+        QTimer::singleShot(0, &window, [&] {
+            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            if (!dialog) return;
+            auto *buttons = dialog->findChild<QDialogButtonBox *>();
+            if (buttons) {
+                for (auto *button : buttons->buttons()) {
+                    auto *push = qobject_cast<QPushButton *>(button);
+                    if (push && push->text() == QStringLiteral("Later")) sawExplicitChoice = push->isDefault();
+                }
+            }
+            dialog->reject();
+        });
+        window.shutdown();
+        QVERIFY(sawExplicitChoice);
+        QCOMPARE(power.size(), 0);
+        QVERIFY(!window.m_powerActions.busy());
+        QCOMPARE(window.backend()->status().current, Mode::Discrete);
+    }
+
+    void demoConfirmedModeShowsTruthfulHeroAndSafePowerChoices() {
+        Window window(true, Language::English, false);
+        auto *backend = window.backend();
+        QSignalSpy applied(backend, &Backend::applyFinished);
+        QSignalSpy helperStarted(&backend->m_apply, &QProcess::started);
+        QSignalSpy probeStarted(&backend->m_probe, &QProcess::started);
+        QSignalSpy powerFinished(&window.m_powerActions, &PowerActions::finished);
+        QSignalSpy powerBusy(&window.m_powerActions, &PowerActions::busyChanged);
+        enum class Stage { Confirmation, PowerChoices, Done };
+        Stage stage = Stage::Confirmation;
+        bool timedOut = false;
+        bool consentWasRequired = false;
+        bool heroWasTruthful = false;
+        bool allPowerChoicesPresent = false;
+        bool laterWasDefault = false;
+        const QString captureDirectory = qEnvironmentVariable("MSI_MUX_TEST_CAPTURE_DIR");
+        bool captureSaved = captureDirectory.isEmpty();
+        QTimer inspector;
+        inspector.setInterval(10);
+        connect(&inspector, &QTimer::timeout, &window, [&] {
+            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            // QDialog is a top-level QWidget even with a QObject parent;
+            // QWidget::isAncestorOf does not identify this modal ownership.
+            // This isolated inert test has no other application's widgets.
+            if (!dialog) return;
+            auto *buttons = dialog->findChild<QDialogButtonBox *>();
+            if (!buttons) return;
+            if (stage == Stage::Confirmation) {
+                auto *input = dialog->findChild<QLineEdit *>();
+                QPushButton *confirm = nullptr;
+                for (auto *button : buttons->buttons())
+                    if (buttons->buttonRole(button) == QDialogButtonBox::AcceptRole)
+                        confirm = qobject_cast<QPushButton *>(button);
+                if (!input || !confirm) return;
+                consentWasRequired = input->text().isEmpty() && !confirm->isEnabled();
+                input->setFocus();
+                QTest::keyClicks(input, QStringLiteral("DISCRETE"));
+                if (!confirm->isEnabled()) return;
+                stage = Stage::PowerChoices;
+                QTest::mouseClick(confirm, Qt::LeftButton);
+            } else if (stage == Stage::PowerChoices) {
+                QPushButton *later = nullptr;
+                bool restart = false;
+                bool powerOff = false;
+                for (auto *button : buttons->buttons()) {
+                    auto *push = qobject_cast<QPushButton *>(button);
+                    if (!push) continue;
+                    if (push->text() == QStringLiteral("Later")) later = push;
+                    if (push->text() == QStringLiteral("Restart…")) restart = push->isEnabled();
+                    if (push->text() == QStringLiteral("Shut down…")) powerOff = push->isEnabled();
+                }
+                if (!later) return;
+                heroWasTruthful = window.m_hero->currentMode() == Mode::Hybrid &&
+                    window.m_hero->targetMode() == Mode::Discrete && window.m_hero->pending() &&
+                    window.m_hero->titleText() == QStringLiteral("Hybrid → Discrete") &&
+                    backend->status().current == Mode::Hybrid && backend->status().target == Mode::Discrete &&
+                    backend->status().pendingShutdown;
+                allPowerChoicesPresent = restart && powerOff && later->isEnabled();
+                laterWasDefault = later->isDefault();
+                // Optional visual QA is confined to this inert test; normal test
+                // runs write no screenshot and production has no capture hook.
+                if (!captureDirectory.isEmpty()) {
+                    const QDir directory(captureDirectory);
+                    captureSaved = directory.exists() && dialog->grab().save(directory.filePath(QStringLiteral("power-dialog-en.png")));
+                }
+                stage = Stage::Done;
+                inspector.stop();
+                QTest::mouseClick(later, Qt::LeftButton);
+            }
+        });
+        // QTRY alone cannot bound a nested QDialog::exec(). This independent
+        // timer closes any owned modal on timeout, allowing the test to fail.
+        QTimer watchdog;
+        watchdog.setInterval(4000);
+        connect(&watchdog, &QTimer::timeout, &window, [&] {
+            timedOut = true;
+            inspector.stop();
+            watchdog.setInterval(25);
+            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            if (dialog) dialog->reject();
+        });
+        watchdog.start();
+        inspector.start();
+        window.requestMode(Mode::Discrete);
+        QTRY_VERIFY_WITH_TIMEOUT(stage == Stage::Done || timedOut, 5000);
+        watchdog.stop();
+        inspector.stop();
+        QVERIFY2(!timedOut, "The inert confirmation/power-dialog flow exceeded its bounded deadline");
+        QVERIFY(consentWasRequired);
+        QVERIFY(heroWasTruthful);
+        QVERIFY(allPowerChoicesPresent);
+        QVERIFY(laterWasDefault);
+        QVERIFY(captureSaved);
+        QCOMPARE(applied.size(), 1);
+        QVERIFY(applied.first().first().toBool());
+        QCOMPARE(helperStarted.size(), 0);
+        QCOMPARE(probeStarted.size(), 0);
+        QCOMPARE(powerFinished.size(), 0);
+        QCOMPARE(powerBusy.size(), 0);
+        QVERIFY(!window.m_powerActions.busy());
+        QVERIFY(!window.m_powerDialogOpen);
+        QCOMPARE(backend->status().current, Mode::Hybrid);
+        QCOMPARE(backend->status().target, Mode::Discrete);
+        QVERIFY(backend->status().pendingShutdown);
     }
 
     void orderlyDestructionDoesNotKillApply() {

@@ -9,7 +9,7 @@ enum class Text {
     Subtitle, Demo, CurrentMode, Unknown, Hybrid, Discrete, Integrated,
     HybridDescription, DiscreteDescription, IntegratedDescription, SelectMode,
     Active, Select, InternalPanel, Firmware, Hardware, AcConnected, Battery,
-    Compatible, Unsupported, Experimental, ExperimentalDetail, PendingTitle,
+    Compatible, Unsupported, PendingTitle,
     PendingDetail, Shutdown, Refresh, Refreshing, Open, Quit, LanguageMenu,
     Autostart, Settings, Ready, Reading, BackendMissing, StatusFailed,
     FirmwareUnavailable, UnsupportedHardware, UnsupportedBios, UnknownMode,
@@ -19,7 +19,10 @@ enum class Text {
     ShutdownFailed, DemoApply, Error, AutostartFailed, AlreadyRunning,
     Version, NoPanel, Disabled, PermissionDenied, InvalidResponse,
     NoChanges, NotificationsUnavailable, ShowAfterStart, RecoveryRequired, AcpiUnavailable,
-    EnableExperimentalIntegrated, IntegratedExperimental, IntegratedOptInRequired, IntegratedRisk, Count
+    About, WhatsNew, ReducedMotion, CurrentToTarget, HeroPendingDetail, PowerCyclePending,
+    LiveMode, PowerOptions, PowerSuccessTitle, PowerSuccessDetail, Restart, RestartUnverified,
+    Later, PowerRequestSent, PowerRequestCancelled, PowerRequestDenied, PowerRequestUnavailable,
+    PowerRequestFailed, PowerRequestDemo, Target, GnomeSetup, GnomeSetupDetail, Count
 };
 QString tr(Text key, Language language);
 QString modeName(Mode mode, Language language);
