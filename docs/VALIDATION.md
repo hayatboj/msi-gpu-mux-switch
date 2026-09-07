@@ -25,10 +25,12 @@ These observations do not validate a write.
 - [x] English and Turkish screenshots visually checked at 680×900; no clipped controls.
 - [x] Real KDE StatusNotifierItem registration verified in inert demo mode; menu labels, active mode, language switching and clean exit verified over D-Bus.
 - [x] Helper restrictions (12 cases) and staged installation/removal tests (14 cases) pass; desktop/AppStream metadata validates.
-- [ ] Linux and Windows CI pass on the published commit.
-- [ ] Release artifacts/checksums match the tested commit.
+- [x] Linux and native Windows CI pass on implementation commit `3109232`; [recorded CI run](https://github.com/hayatboj/msi-gpu-mux-switch/actions/runs/34119405294).
+- [x] Linux/Windows bundles build from that commit; the Linux archive checksum and complete 16-file payload validate. Both GitHub-built Linux executables launch on CachyOS; [build run](https://github.com/hayatboj/msi-gpu-mux-switch/actions/runs/34119405288).
 
 Local software checks above completed on 2026-09-07. See [CI](https://github.com/hayatboj/msi-gpu-mux-switch/actions/workflows/ci.yml) for the exact commit's remote Linux/Windows results. Demo tests never invoked the privileged helper. The helper has PIE, full RELRO and a non-executable stack. Installation tests used an isolated synthetic system tree.
+
+Release packaging reruns on the release tag. Check its [release build](https://github.com/hayatboj/msi-gpu-mux-switch/actions/workflows/release.yml) and downloaded `SHA256SUMS` when installing; the results above identify the tested implementation, not arbitrary future commits. GitHub Linux archives build on Ubuntu 24.04 with system Qt 6 and do not bundle Qt.
 
 ## Hardware release gate
 
