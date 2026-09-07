@@ -430,7 +430,14 @@ private slots:
         QCOMPARE(window.backend()->status().current, Mode::Discrete);
     }
 
+    void demoConfirmedModeShowsTruthfulHeroAndSafePowerChoices_data() {
+        QTest::addColumn<bool>("dismissWithReturn");
+        QTest::newRow("click-later") << false;
+        QTest::newRow("return-without-choice") << true;
+    }
+
     void demoConfirmedModeShowsTruthfulHeroAndSafePowerChoices() {
+        QFETCH(bool, dismissWithReturn);
         Window window(true, Language::English, false);
         auto *backend = window.backend();
         QSignalSpy applied(backend, &Backend::applyFinished);
@@ -445,6 +452,7 @@ private slots:
         bool heroWasTruthful = false;
         bool allPowerChoicesPresent = false;
         bool laterWasDefault = false;
+        bool powerButtonsCannotBecomeDefault = false;
         const QString captureDirectory = qEnvironmentVariable("MSI_MUX_TEST_CAPTURE_DIR");
         bool captureSaved = captureDirectory.isEmpty();
         QTimer inspector;
@@ -474,12 +482,20 @@ private slots:
                 QPushButton *later = nullptr;
                 bool restart = false;
                 bool powerOff = false;
+                bool restartCannotDefault = false;
+                bool powerOffCannotDefault = false;
                 for (auto *button : buttons->buttons()) {
                     auto *push = qobject_cast<QPushButton *>(button);
                     if (!push) continue;
                     if (push->text() == QStringLiteral("Later")) later = push;
-                    if (push->text() == QStringLiteral("Restart…")) restart = push->isEnabled();
-                    if (push->text() == QStringLiteral("Shut down…")) powerOff = push->isEnabled();
+                    if (push->text() == QStringLiteral("Restart…")) {
+                        restart = push->isEnabled();
+                        restartCannotDefault = !push->autoDefault() && !push->isDefault();
+                    }
+                    if (push->text() == QStringLiteral("Shut down…")) {
+                        powerOff = push->isEnabled();
+                        powerOffCannotDefault = !push->autoDefault() && !push->isDefault();
+                    }
                 }
                 if (!later) return;
                 heroWasTruthful = window.m_hero->currentMode() == Mode::Hybrid &&
@@ -489,6 +505,7 @@ private slots:
                     backend->status().pendingShutdown;
                 allPowerChoicesPresent = restart && powerOff && later->isEnabled();
                 laterWasDefault = later->isDefault();
+                powerButtonsCannotBecomeDefault = restartCannotDefault && powerOffCannotDefault;
                 // Optional visual QA is confined to this inert test; normal test
                 // runs write no screenshot and production has no capture hook.
                 if (!captureDirectory.isEmpty()) {
@@ -497,7 +514,8 @@ private slots:
                 }
                 stage = Stage::Done;
                 inspector.stop();
-                QTest::mouseClick(later, Qt::LeftButton);
+                if (dismissWithReturn) QTest::keyClick(dialog, Qt::Key_Return);
+                else QTest::mouseClick(later, Qt::LeftButton);
             }
         });
         // QTRY alone cannot bound a nested QDialog::exec(). This independent
@@ -522,6 +540,7 @@ private slots:
         QVERIFY(heroWasTruthful);
         QVERIFY(allPowerChoicesPresent);
         QVERIFY(laterWasDefault);
+        QVERIFY(powerButtonsCannotBecomeDefault);
         QVERIFY(captureSaved);
         QCOMPARE(applied.size(), 1);
         QVERIFY(applied.first().first().toBool());

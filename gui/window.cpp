@@ -526,11 +526,23 @@ void Window::shutdown() {
     auto *restart = buttons->addButton(t(Text::Restart), QDialogButtonBox::ActionRole);
     auto *powerOff = buttons->addButton(t(Text::Shutdown), QDialogButtonBox::ActionRole);
     powerOff->setObjectName(QStringLiteral("primary"));
+    // Older Qt button-box layouts can focus the first action when shown and
+    // promote an auto-default button. Power actions must never inherit Return.
+    restart->setAutoDefault(false);
+    restart->setDefault(false);
+    powerOff->setAutoDefault(false);
+    powerOff->setDefault(false);
+    later->setAutoDefault(true);
     later->setDefault(true);
+    later->setFocus(Qt::OtherFocusReason);
     layout->addWidget(buttons);
     connect(later, &QPushButton::clicked, &dialog, &QDialog::reject);
     connect(restart, &QPushButton::clicked, &dialog, [&dialog] { dialog.done(2); });
     connect(powerOff, &QPushButton::clicked, &dialog, [&dialog] { dialog.done(3); });
+    QTimer::singleShot(0, &dialog, [later] {
+        later->setDefault(true);
+        later->setFocus(Qt::OtherFocusReason);
+    });
     const int choice = dialog.exec();
     // A new recovery condition or another transaction may have appeared while
     // the user read the dialog. Recheck before sending a desktop request.

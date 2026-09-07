@@ -39,7 +39,7 @@ The release workflow runs only on `v*` tag pushes or manual `workflow_dispatch`,
 Local validation on 2026-09-07 passed all eight CTest groups: helper restrictions,
 installer boundaries, GUI/status/animation/confirmation, desktop power requests,
 GNOME detection, About/release notes, inert CLI previews, and local-instance
-forwarding. Qt result counts include initialization and cleanup: **55 UI**, **42
+forwarding. Qt result counts include initialization and cleanup: **56 UI**, **42
 power**, **28 desktop integration**, **6 About**, and **4 instance** results.
 The launch suite passed two tests with bilingual/page and invalid-argument cases;
 the unchanged installer suite passed 17 cases and the helper suite passed 12.
@@ -49,7 +49,7 @@ also passed. Desktop and AppStream metadata validate.
 The full demo confirmation-to-power-dialog path was tested without helper/probe
 processes or desktop power calls: the hero kept current Hybrid and requested
 Discrete separate, all three power choices appeared, Later was the default, and
-choosing it sent no power request. English/Turkish main and About/release-note
+choosing it sent no power request. A second case presses Return without choosing a power action and also sends no power request; power buttons cannot become implicit defaults on older Qt versions. English/Turkish main and About/release-note
 screens and all six pending directions were visually reviewed. The firmware
 engine, helper and installer implementation are unchanged from 0.3.0.
 
